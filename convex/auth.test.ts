@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import authSchema from "./betterAuth/schema";
 
 const admin = { email: "admin@example.com", username: "admin", password: "correct-horse-battery" };
@@ -68,4 +68,31 @@ test("public signup is rejected", async () => {
   });
 
   expect(res.status).toBe(400);
+  expect(await res.json()).toMatchObject({ code: "EMAIL_PASSWORD_SIGN_UP_DISABLED" });
+});
+
+describe("users.me", () => {
+  test("returns the signed-in User with their role", async () => {
+    const t = setup();
+    await t.action(internal.seed.firstAdmin, {});
+    const signIn = await post(t, "/sign-in/username", {
+      username: admin.username,
+      password: admin.password,
+    });
+    const { token } = await signIn.json();
+    const session = await t.fetch("/api/auth/get-session", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const { user, session: row } = await session.json();
+
+    const me = await t.withIdentity({ subject: user.id, sessionId: row.id }).query(api.users.me);
+
+    expect(me).toEqual({ name: admin.username, username: admin.username, role: "admin" });
+  });
+
+  test("rejects a signed-out caller", async () => {
+    const t = setup();
+
+    await expect(t.query(api.users.me)).rejects.toThrow("Unauthenticated");
+  });
 });
