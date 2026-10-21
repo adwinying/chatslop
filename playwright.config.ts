@@ -12,5 +12,7 @@ export default defineConfig({
     url: "http://localhost:3000/login",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
+    // convex dev stops its backend and vite on SIGINT; a hard kill orphans them.
+    gracefulShutdown: { signal: "SIGINT", timeout: 15_000 },
   },
 });
