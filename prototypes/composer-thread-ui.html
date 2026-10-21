@@ -1,0 +1,1500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE · chatslop Composer and Thread UI</title>
+<!--
+  PROTOTYPE, throw away. Answers "Composer and Thread UI" (adwinying/chatslop#11).
+  Three surfaces, each with A/B/C variants, mixed via ?sidebar=&thread=&composer=
+  (or the yellow switcher: ←/→ cycle, ↑/↓ pick surface).
+  Mock data, stubbed streaming (type "fail" to get an errored Answer), no persistence.
+-->
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.1.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.1.0/client?external=react",
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react",
+    "marked": "https://esm.sh/marked@15.0.7"
+  }
+}
+</script>
+<style type="text/tailwindcss">
+  @theme {
+    --color-brand-100: #cfe6f1;
+    --color-brand-300: #6fb3d3;
+    --color-brand-400: #2f8db8;
+    --color-brand-500: #0b7aa8;
+    --color-brand-600: #00597f;
+  }
+</style>
+<style>
+  .md > * + * { margin-top: .75rem; }
+  .md ul { list-style: disc; padding-left: 1.25rem; }
+  .md ol { list-style: decimal; padding-left: 1.25rem; }
+  .md code { background: #27272a; border-radius: .25rem; padding: .1rem .3rem; font-size: .85em; }
+  .md pre { background: #18181b; border: 1px solid #27272a; border-radius: .5rem; padding: .75rem 1rem; overflow-x: auto; font-size: .8rem; }
+  .md pre code { background: none; padding: 0; }
+  .md a { color: #6fb3d3; text-decoration: underline; }
+  .flash { outline: 2px solid #0b7aa8; outline-offset: 6px; border-radius: 12px; }
+</style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 antialiased">
+<div id="root"></div>
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
+import { createRoot } from 'react-dom/client';
+import { marked } from 'marked';
+import * as I from 'lucide-react';
+
+/* ───────────── mock domain ───────────── */
+
+const cx = (...a) => a.filter(Boolean).join(' ');
+const uid = () => Math.random().toString(36).slice(2, 9);
+const MIN = 60e3, HOUR = 60 * MIN, DAY = 24 * HOUR, MB = 1024 * 1024;
+const NOW = Date.now();
+const fmtSize = (n) => (n < 1024 ? `${n} B` : n < MB ? `${Math.round(n / 1024)} KB` : `${(n / MB).toFixed(1)} MB`);
+const rel = (ts) => { const s = (Date.now() - ts) / 1000; return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`; };
+const k = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
+
+const PROVIDERS = [
+  { id: 'codex', name: 'Codex', apiFormat: 'openai-responses' },
+  { id: 'claude', name: 'Claude', apiFormat: 'anthropic-messages' },
+];
+// Family-ranked order, as decided in "Provider and Model configuration".
+const MODELS = [
+  { id: 'gpt-6-astra', provider: 'codex', name: 'GPT-6 Astra', reasoning: ['low', 'medium', 'high', 'xhigh'], attach: ['image', 'pdf'] },
+  { id: 'gpt-6.1-sol', provider: 'codex', name: 'GPT-6.1 Sol', reasoning: ['low', 'medium', 'high'], attach: ['image', 'pdf'] },
+  { id: 'gpt-6-luna', provider: 'codex', name: 'GPT-6 Luna', reasoning: ['minimal', 'low', 'medium', 'high'], attach: ['image'] },
+  { id: 'gpt-6-pro', provider: 'codex', name: 'GPT-6 Pro', reasoning: ['high'], attach: ['image', 'pdf'], adminOnly: true },
+  { id: 'codex-mini', provider: 'codex', name: 'Codex Mini', reasoning: [], attach: [] },
+  { id: 'claude-fable-5-1', provider: 'claude', name: 'Fable 5.1', reasoning: ['off', 'low', 'medium', 'high', 'max'], attach: ['image', 'pdf'] },
+  { id: 'claude-opus-5-5', provider: 'claude', name: 'Opus 5.5', reasoning: ['off', 'low', 'medium', 'high', 'max'], attach: ['image', 'pdf'] },
+  { id: 'claude-sonnet-5-5', provider: 'claude', name: 'Sonnet 5.5', reasoning: ['off', 'low', 'medium', 'high'], attach: ['image', 'pdf'] },
+  { id: 'claude-haiku-5-5', provider: 'claude', name: 'Haiku 5.5', reasoning: ['off', 'low', 'medium', 'high'], attach: ['image', 'pdf'] },
+];
+const modelById = (id) => MODELS.find((m) => m.id === id) ?? MODELS[0];
+const resolveReasoning = (m, remembered) =>
+  !m.reasoning.length ? null : m.reasoning.includes(remembered) ? remembered : m.reasoning.includes('medium') ? 'medium' : m.reasoning[0];
+const settingsLabel = (s) => `${modelById(s.modelId).name} · ${s.reasoningLevel ?? 'no reasoning'} · web ${s.webSearch ? 'on' : 'off'}`;
+
+const SOURCES = [
+  { title: 'Full Text Search | Convex Developer Hub', url: 'https://docs.convex.dev/search/text-search' },
+  { title: 'tantivy::tokenizer - Rust', url: 'https://docs.rs/tantivy/latest/tantivy/tokenizer/' },
+  { title: 'CJKBigramFilter (Lucene)', url: 'https://lucene.apache.org/core/9_0_0/analysis/common/org/apache/lucene/analysis/cjk/CJKBigramFilter.html' },
+];
+const domain = (u) => new URL(u).hostname.replace(/^www\./, '');
+
+function makeScript(prompt, { reasoningLevel, webSearch }) {
+  const p = prompt.trim().replace(/\s+/g, ' ').slice(0, 60) || 'the attached files';
+  const think = !reasoningLevel || reasoningLevel === 'off' ? [] : [
+    `The User is asking about "${p}". `,
+    'Let me work out what they actually need before answering. ',
+    webSearch ? 'APIs drift, so I should check current docs. ' : 'I can answer from what I know. ',
+    'Plan: short summary, a concrete example, then caveats.',
+  ];
+  const text = [
+    `Short answer for **${p}**: it's doable, with one caveat.\n\n`,
+    'Here is how I would approach it:\n\n1. Start with the smallest working version.\n2. Measure before optimizing.\n3. Keep the data model boring.\n\n',
+    '```ts\nexport async function handler(ctx: ActionCtx) {\n  const result = await doTheThing(ctx);\n  return result;\n}\n```\n\n',
+    'The caveat: behaviour differs between Providers, so try both Codex and Claude before relying on it.',
+  ];
+  return { think, text, sources: webSearch ? SOURCES.slice(0, 2) : [], fail: /fail/i.test(prompt) };
+}
+
+function startLive(db, threadId, prompt, settings) {
+  const live = { threadId, ...settings, reasoning: '', text: '', sources: [], step: 0, ttft: null, startedAt: Date.now(), script: makeScript(prompt, settings) };
+  return { ...db, lives: { ...db.lives, [threadId]: live } };
+}
+
+function finalize(db, tid, status, error) {
+  const live = db.lives[tid];
+  const lives = { ...db.lives };
+  delete lives[tid];
+  const answer = {
+    id: uid(), role: 'assistant', createdAt: Date.now(), status, error,
+    modelId: live.modelId, reasoningLevel: live.reasoningLevel, webSearch: live.webSearch,
+    reasoning: live.reasoning, text: live.text, sources: live.sources,
+    usage: { input: 4000 + Math.round(Math.random() * 9000), output: Math.round(live.text.length / 4), reasoning: Math.round(live.reasoning.length / 4) },
+    timing: { ttft: live.ttft ?? 0, duration: (Date.now() - live.startedAt) / 1000 },
+  };
+  return {
+    ...db, lives,
+    messages: { ...db.messages, [tid]: [...(db.messages[tid] ?? []), answer] },
+    threads: db.threads.map((t) => (t.id === tid ? { ...t, lastMessageAt: Date.now() } : t)),
+  };
+}
+
+function tick(db) {
+  let next = db;
+  for (const [tid, live] of Object.entries(db.lives)) {
+    const s = live.script, step = live.step + 1;
+    if (s.fail && step >= 3) { next = finalize(next, tid, 'error', '502 Bad Gateway from CLIProxyAPI: upstream connection reset.'); continue; }
+    let upd;
+    if (step <= s.think.length) upd = { ...live, step, reasoning: live.reasoning + s.think[step - 1] };
+    else if (step <= s.think.length + s.text.length)
+      upd = { ...live, step, ttft: live.ttft ?? (Date.now() - live.startedAt) / 1000, sources: s.sources, text: live.text + s.text[step - 1 - s.think.length] };
+    else { next = finalize(next, tid, 'complete'); continue; }
+    next = { ...next, lives: { ...next.lives, [tid]: upd } };
+  }
+  return next;
+}
+
+const pair = (prompt, answer, modelId, extra = {}) => [
+  { id: uid(), role: 'user', text: prompt, createdAt: NOW - 2 * HOUR, attachments: [] },
+  { id: uid(), role: 'assistant', text: answer, createdAt: NOW - 2 * HOUR, modelId, reasoningLevel: 'medium', webSearch: false, status: 'complete', reasoning: '', sources: [], usage: { input: 1200, output: 340, reasoning: 0 }, timing: { ttft: 1.1, duration: 6.3 }, ...extra },
+];
+
+function seed() {
+  const threads = [
+    { id: 't1', title: 'Convex 全文検索で日本語を扱う', pinned: true, lastMessageAt: NOW - 20 * MIN, modelId: 'claude-opus-5-5' },
+    { id: 't2', title: 'Caddy reverse proxy for WebSockets', pinned: true, lastMessageAt: NOW - 3 * DAY, modelId: 'gpt-6.1-sol' },
+    { id: 't3', title: 'Refactor attachment upload flow', lastMessageAt: NOW - 2 * MIN, modelId: 'gpt-6-astra' },
+    { id: 't4', title: 'Weekend ramen: tonkotsu broth timing', lastMessageAt: NOW - 26 * HOUR, modelId: 'claude-sonnet-5-5' },
+    { id: 't5', title: 'TanStack Start loaders vs Convex queries', lastMessageAt: NOW - 4 * DAY, modelId: 'claude-fable-5-1' },
+    { id: 't6', title: '夏休みの京都旅行プラン', lastMessageAt: NOW - 12 * DAY, modelId: 'claude-haiku-5-5' },
+    { id: 't7', title: 'kopia retention policy for convex exports', lastMessageAt: NOW - 40 * DAY, modelId: 'gpt-6-luna' },
+  ].map((t) => ({ pinned: false, titlePending: false, ...t }));
+
+  const t1 = [
+    {
+      id: 'p1', role: 'user', createdAt: NOW - 50 * MIN,
+      text: "How do I make Convex full-text search work for Japanese? Queries like 日本語 return nothing. I've attached the schema diagram and the docs page.",
+      attachments: [
+        { id: 'a1', name: 'search-schema.png', type: 'image', size: 184_000, progress: 100 },
+        { id: 'a2', name: 'convex-search-docs.pdf', type: 'pdf', size: 2_400_000, progress: 100 },
+      ],
+    },
+    {
+      id: 'r1', role: 'assistant', createdAt: NOW - 49 * MIN, status: 'complete',
+      modelId: 'claude-opus-5-5', reasoningLevel: 'high', webSearch: true,
+      reasoning: "The User hits the tokenizer problem. Convex search runs on tantivy with a whitespace/punctuation tokenizer, so a CJK run becomes one token. The standard workaround is overlapping bigrams at write time and at query time. I'll check the Convex docs for any built-in analyzer option first… none. Bigramming it is.",
+      text: "Convex's search index tokenizes on whitespace and punctuation, so a run of Japanese text becomes **one giant token**. A query only matches when it equals that whole run.\n\nThe usual workaround is **CJK bigramming**: split every CJK run into overlapping 2-character tokens, both when you write `searchText` and when you build the query.\n\n```ts\nconst CJK = /[\\u3040-\\u30ff\\u3400-\\u9fff]+/g;\n\nexport function toSearchText(text: string) {\n  return text.replace(CJK, (run) =>\n    run.length < 2 ? run : [...run].slice(1).map((c, i) => run[i] + c).join(\" \"),\n  );\n}\n```\n\n- 日本語 → `日本 本語`\n- Run the **same** function over the query, so 日本 matches.\n- Keep the original text for display; store the bigrams only in `searchText`.",
+      sources: SOURCES, usage: { input: 18204, output: 612, reasoning: 1380 }, timing: { ttft: 3.2, duration: 14.8 },
+    },
+    { id: 'p2', role: 'user', createdAt: NOW - 40 * MIN, text: 'Does that handle katakana long vowels like ー?', attachments: [] },
+    {
+      id: 'r2', role: 'assistant', createdAt: NOW - 39 * MIN, status: 'stopped',
+      modelId: 'gpt-6.1-sol', reasoningLevel: 'medium', webSearch: false,
+      reasoning: 'ー is U+30FC, inside the katakana block.',
+      text: 'Yes: `ー` (U+30FC) falls inside `\\u30a0-\\u30ff`, so it stays in the run and is bigrammed like any other character. For example, データ becomes',
+      sources: [], usage: { input: 18900, output: 41, reasoning: 12 }, timing: { ttft: 0.9, duration: 2.1 },
+    },
+    { id: 'p3', role: 'user', createdAt: NOW - 21 * MIN, text: 'Try again with Astra at xhigh.', attachments: [] },
+    {
+      id: 'r3', role: 'assistant', createdAt: NOW - 20 * MIN, status: 'error',
+      modelId: 'gpt-6-astra', reasoningLevel: 'xhigh', webSearch: false,
+      error: "400 Bad Request from Codex: reasoning.effort 'xhigh' is not supported for this model.",
+      reasoning: '', text: '', sources: [], usage: { input: 0, output: 0, reasoning: 0 }, timing: { ttft: 0, duration: 0.4 },
+    },
+  ];
+
+  const t3Prompt = 'Our upload flow waits for every file before enabling Send. Can we upload on attach instead?';
+  let db = {
+    threads,
+    messages: {
+      t1,
+      t2: pair('How do I proxy WebSockets through Caddy?', 'Caddy proxies WebSockets out of the box: `reverse_proxy localhost:3210` is enough.', 'gpt-6.1-sol'),
+      t3: [{ id: uid(), role: 'user', text: t3Prompt, createdAt: NOW - 2 * MIN, attachments: [] }],
+      t4: pair('How long should tonkotsu broth boil?', 'Twelve hours at a rolling boil gets the milky emulsion; top up with water as it reduces.', 'claude-sonnet-5-5'),
+      t5: pair('Should I fetch in TanStack Start loaders or useQuery?', 'Use `useQuery` for live data; loaders only for the SSR first paint.', 'claude-fable-5-1'),
+      t6: pair('京都で3日間、おすすめのルートは？', '1日目は東山、2日目は嵐山、3日目は伏見稲荷と宇治がおすすめです。', 'claude-haiku-5-5'),
+      t7: pair('What kopia retention keeps 7 dailies and 4 weeklies?', '`kopia policy set --keep-daily 7 --keep-weekly 4 /backups`', 'gpt-6-luna'),
+    },
+    lives: {},
+  };
+  db = startLive(db, 't3', t3Prompt, { modelId: 'gpt-6-astra', reasoningLevel: 'high', webSearch: true });
+  const s3 = db.lives.t3.script;
+  // Long enough to still be streaming when you open it.
+  db.lives.t3 = { ...db.lives.t3, step: 2, reasoning: s3.think.slice(0, 2).join(''), script: { ...s3, text: [...s3.text, ...s3.text, ...s3.text, ...s3.text, ...s3.text] } };
+  return db;
+}
+
+// Markdown syntax is stripped (code content kept) so snippets and matches read as plain text.
+const stripMd = (s) => s
+  .replace(/```\w*\n?/g, '')
+  .replace(/`([^`]*)`/g, '$1')
+  .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+  .replace(/(\*\*|\*|~~)(\S.*?\S|\S)\1/g, '$2')
+  .replace(/^\s*(#{1,6}|[-*+]|\d+\.|>)\s+/gm, '');
+const searchableText = (m) => [stripMd(m.text), ...(m.attachments ?? []).map((a) => a.name)].join(' ');
+function snippet(text, n) {
+  const flat = text.replace(/\s+/g, ' ');
+  const i = flat.toLowerCase().indexOf(n);
+  const start = Math.max(0, i - 30), end = i + n.length + 50;
+  return (start ? '…' : '') + flat.slice(start, end) + (end < flat.length ? '…' : '');
+}
+// Two indexes in the real thing (titles, message searchText); hits grouped by Thread.
+function searchDb(db, q) {
+  const n = q.trim().toLowerCase();
+  if (!n) return [];
+  return db.threads.flatMap((t) => {
+    const titleHit = t.title.toLowerCase().includes(n);
+    const hits = (db.messages[t.id] ?? [])
+      .filter((m) => searchableText(m).toLowerCase().includes(n))
+      .map((m) => ({ id: m.id, role: m.role, snippet: snippet(searchableText(m), n) }));
+    return titleHit || hits.length ? [{ thread: t, titleHit, hits }] : [];
+  });
+}
+
+function groupThreads(threads) {
+  const age = (t) => Date.now() - t.lastMessageAt;
+  const sorted = [...threads].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+  const seen = new Set();
+  return [
+    ['Pinned', (t) => t.pinned], ['Today', (t) => age(t) < DAY], ['Yesterday', (t) => age(t) < 2 * DAY],
+    ['Last 7 days', (t) => age(t) < 7 * DAY], ['Last 30 days', (t) => age(t) < 30 * DAY], ['Older', () => true],
+  ].map(([label, f]) => ({ label, threads: sorted.filter((t) => !seen.has(t.id) && f(t) && seen.add(t.id)) }))
+    .filter((g) => g.threads.length);
+}
+
+function groupTurns(items) {
+  const turns = [];
+  for (const m of items) {
+    if (m.role === 'user') turns.push({ prompt: m, answer: null });
+    else if (turns.length) turns.at(-1).answer = m;
+  }
+  return turns;
+}
+
+async function classify(file) {
+  if (file.type.startsWith('image/')) return 'image';
+  if (file.type === 'application/pdf') return 'pdf';
+  const buf = new Uint8Array(await file.slice(0, 256 * 1024).arrayBuffer());
+  if (buf.includes(0)) return null;
+  try { new TextDecoder('utf-8', { fatal: true }).decode(buf, { stream: true }); return 'text'; } catch { return null; }
+}
+
+/* ───────────── shared widgets ───────────── */
+
+const Ctx = createContext(null);
+const useApp = () => useContext(Ctx);
+
+const IconBtn = ({ icon: Icon, title, onClick, className, disabled, size = 16 }) => (
+  <button type="button" title={title} aria-label={title} disabled={disabled} onClick={onClick}
+    className={cx('inline-flex items-center justify-center rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:pointer-events-none disabled:opacity-40', className)}>
+    <Icon size={size} />
+  </button>
+);
+
+function Pop({ open, setOpen, trigger, children, className }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', down);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      {trigger}
+      {open && <div className={cx('absolute z-50 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl', className)}>{children}</div>}
+    </div>
+  );
+}
+
+const ProviderIcon = ({ providerId, size = 14 }) => {
+  const anthropic = PROVIDERS.find((p) => p.id === providerId)?.apiFormat === 'anthropic-messages';
+  const Icon = anthropic ? I.Asterisk : I.Hexagon;
+  return <Icon size={size} className={cx('shrink-0', anthropic ? 'text-orange-400' : 'text-emerald-400')} />;
+};
+
+const Caps = ({ m }) => (
+  <span className="flex items-center gap-1 text-zinc-500">
+    {m.reasoning.length > 0 && <I.Brain size={12} aria-label="reasoning" />}
+    {m.attach.includes('image') && <I.Image size={12} aria-label="images" />}
+    {m.attach.includes('pdf') && <I.FileText size={12} aria-label="PDFs" />}
+  </span>
+);
+
+// T3 Code style picker: Favorites tab, one tab per Provider, name search, ⌘1–9.
+function ModelPickerPanel({ modelId, onSelect }) {
+  const { favorites, toggleFavorite } = useApp();
+  const [tab, setTab] = useState(favorites.length ? 'fav' : PROVIDERS[0].id);
+  const [q, setQ] = useState('');
+  const list = q
+    ? MODELS.filter((m) => m.name.toLowerCase().includes(q.toLowerCase()))
+    : tab === 'fav' ? favorites.map(modelById) : MODELS.filter((m) => m.provider === tab);
+  useEffect(() => {
+    const h = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || !/^[1-9]$/.test(e.key)) return;
+      const id = favorites[+e.key - 1];
+      if (id) { e.preventDefault(); onSelect(id); }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [favorites]);
+  const tabs = [{ id: 'fav', icon: <I.Star size={15} className="text-yellow-400" />, name: 'Favorites' }, ...PROVIDERS.map((p) => ({ id: p.id, icon: <ProviderIcon providerId={p.id} size={15} />, name: p.name }))];
+  return (
+    <div className="flex h-80 w-[min(24rem,90vw)] overflow-hidden rounded-xl">
+      <div className="flex flex-col gap-1 border-r border-zinc-800 p-1.5">
+        {tabs.map((t) => (
+          <button key={t.id} title={t.name} onClick={() => { setTab(t.id); setQ(''); }}
+            className={cx('rounded-lg p-2', tab === t.id && !q ? 'bg-zinc-800' : 'hover:bg-zinc-800/60')}>{t.icon}</button>
+        ))}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+          <I.Search size={14} className="text-zinc-500" />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search Models…"
+            onKeyDown={(e) => { if (e.key === 'Enter' && list[0]) onSelect(list[0].id); }}
+            className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-500" />
+        </div>
+        <div className="flex-1 overflow-y-auto p-1">
+          {!list.length && <p className="p-4 text-center text-xs text-zinc-500">{tab === 'fav' && !q ? 'Star a Model to add it here.' : 'No Models match.'}</p>}
+          {list.map((m, i) => (
+            <div key={m.id} onClick={() => onSelect(m.id)}
+              className={cx('group flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm', m.id === modelId ? 'bg-zinc-800' : 'hover:bg-zinc-800/60')}>
+              <ProviderIcon providerId={m.provider} />
+              <span className="truncate">{m.name}</span>
+              {m.adminOnly && <span title="Admin-only Model" className="rounded bg-violet-500/20 px-1 text-[10px] text-violet-300">admin</span>}
+              <span className="ml-auto flex items-center gap-2">
+                <Caps m={m} />
+                {tab === 'fav' && !q && i < 9 && <kbd className="text-[10px] text-zinc-500">⌘{i + 1}</kbd>}
+                <button onClick={(e) => { e.stopPropagation(); toggleFavorite(m.id); }} title="Favorite"
+                  className={cx(favorites.includes(m.id) ? 'text-yellow-400' : 'text-zinc-600 opacity-0 group-hover:opacity-100')}>
+                  <I.Star size={13} fill={favorites.includes(m.id) ? 'currentColor' : 'none'} />
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttChip({ a, bad, onRemove, onOpen }) {
+  const Icon = a.type === 'pdf' ? I.FileText : I.FileCode;
+  return (
+    <div onClick={onOpen} title={bad ? `The selected Model can't read this ${a.type}` : a.name}
+      className={cx('relative flex items-center gap-2 overflow-hidden rounded-lg border px-2 py-1.5 text-xs', onOpen && 'cursor-pointer hover:border-zinc-500',
+        bad ? 'border-red-500/60 bg-red-500/10 text-red-300' : 'border-zinc-700 bg-zinc-800/60')}>
+      {a.type === 'image' ? <Thumb a={a} className="size-6 rounded" /> : <Icon size={14} />}
+      <span className="max-w-36 truncate">{a.name}</span>
+      <span className="text-zinc-500">{fmtSize(a.size)}</span>
+      {bad && <I.AlertTriangle size={12} />}
+      {a.progress < 100 && <div className="absolute inset-x-0 bottom-0 h-0.5 bg-zinc-700"><div className="h-full bg-sky-400 transition-all" style={{ width: `${a.progress}%` }} /></div>}
+      {onRemove && <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="text-zinc-500 hover:text-zinc-100" aria-label={`Remove ${a.name}`}><I.X size={12} /></button>}
+    </div>
+  );
+}
+
+const Thumb = ({ a, className }) =>
+  a.url ? <img src={a.url} alt={a.name} className={cx('object-cover', className)} />
+    : <div className={cx('bg-gradient-to-br from-sky-500 via-indigo-500 to-fuchsia-500', className)} />;
+
+function MsgAtts({ atts, align = 'start', large }) {
+  const { openAtt } = useApp();
+  if (!atts?.length) return null;
+  const images = atts.filter((a) => a.type === 'image'), files = atts.filter((a) => a.type !== 'image');
+  return (
+    <div className={cx('mb-2 flex flex-col gap-2', align === 'end' ? 'items-end' : 'items-start')}>
+      {images.length > 0 && <div className="flex flex-wrap gap-2">{images.map((a) => (
+        <button key={a.id} onClick={() => openAtt(a)} title={a.name}><Thumb a={a} className={cx('rounded-lg border border-zinc-700', large ? 'size-32' : 'size-20')} /></button>
+      ))}</div>}
+      {files.length > 0 && <div className="flex flex-wrap gap-2">{files.map((a) => <AttChip key={a.id} a={a} onOpen={() => openAtt(a)} />)}</div>}
+    </div>
+  );
+}
+
+const Md = ({ text, live }) => <div className="md leading-relaxed" dangerouslySetInnerHTML={{ __html: marked.parse((text || '') + (live ? ' ▍' : '')) }} />;
+
+const Title = ({ t }) => <span className={cx('truncate', t.titlePending && 'animate-pulse text-zinc-400')}>{t.title}</span>;
+
+function TitleInline({ t, onRename, onClick, edit: editProp, setEdit: setEditProp, className }) {
+  const [editLocal, setEditLocal] = useState(false);
+  const edit = editProp ?? editLocal, setEdit = setEditProp ?? setEditLocal;
+  const [v, setV] = useState(t.title);
+  useEffect(() => setV(t.title), [t.title, edit]);
+  const commit = () => { setEdit(false); if (v.trim() && v.trim() !== t.title) onRename(t.id, v.trim()); };
+  if (edit) return (
+    <input autoFocus value={v} onChange={(e) => setV(e.target.value)} onBlur={commit} onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEdit(false); }}
+      className={cx('min-w-0 flex-1 rounded bg-zinc-800 px-1 outline-none ring-1 ring-zinc-600', className)} />
+  );
+  return (
+    <button onClick={onClick ?? (() => setEdit(true))} onDoubleClick={() => setEdit(true)} title={onClick ? 'Double-click to rename' : 'Click to rename'}
+      className={cx('flex min-w-0 text-left', className)}><Title t={t} /></button>
+  );
+}
+
+const Hl = ({ text, q }) => {
+  const esc = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!esc) return text;
+  return text.split(new RegExp(`(${esc})`, 'ig')).map((p, i) => (i % 2 ? <mark key={i} className="rounded bg-brand-500/30 text-brand-100">{p}</mark> : p));
+};
+
+function SearchResults({ results, q, actions, rich }) {
+  const shown = rich ? 3 : 1;
+  if (!results.length) return <p className="px-3 py-6 text-center text-sm text-zinc-500">No Threads match “{q}”.</p>;
+  return (
+    <div className="space-y-1">
+      {results.map(({ thread: t, hits }) => (
+        <div key={t.id} className="rounded-lg px-2 py-1.5 hover:bg-zinc-800/60">
+          <button onClick={() => actions.open(t.id)} className="flex w-full items-center gap-2 text-left text-sm font-medium">
+            <span className="truncate"><Hl text={t.title} q={q} /></span>
+            {rich && hits.length > 0 && <span className="ml-auto shrink-0 rounded bg-zinc-800 px-1.5 text-[10px] text-zinc-400">{hits.length} hit{hits.length > 1 && 's'}</span>}
+          </button>
+          {hits.slice(0, shown).map((h) => (
+            <button key={h.id} onClick={() => actions.openHit(t.id, h.id)} className="mt-0.5 line-clamp-2 block w-full text-left text-xs text-zinc-400 hover:text-zinc-200">
+              {rich && <span className="mr-1 text-zinc-600">{h.role === 'user' ? 'You:' : 'Answer:'}</span>}<Hl text={h.snippet} q={q} />
+            </button>
+          ))}
+          {hits.length > shown && <div className="text-[11px] text-zinc-600">+{hits.length - shown} more</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NewThreadHero({ actions, onOpenNav, navAlways }) {
+  return (
+    <div>
+      <div className="p-3"><IconBtn icon={I.PanelLeft} title="Threads" onClick={onOpenNav} className={navAlways ? '' : 'md:hidden'} /></div>
+      <div className="mx-auto mt-[12vh] max-w-xl px-6">
+        <h1 className="text-3xl font-semibold">How can I help you, Adwin?</h1>
+        <div className="mt-6 space-y-1">
+          {['Explain Convex search indexes', '京都の紅葉、いつが見頃？', 'Write a Caddyfile for a WebSocket app', 'Summarize this PDF'].map((s) => (
+            <button key={s} onClick={() => actions.setDraftText(s)} className="block w-full border-b border-zinc-800 px-2 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-900">{s}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const stats = (m) => m.usage && `${k(m.usage.input)} in · ${k(m.usage.output)} out · ${k(m.usage.reasoning)} reasoning · TTFT ${m.timing.ttft.toFixed(1)}s · ${m.timing.duration.toFixed(1)}s`;
+
+/* ───────────── Thread view variants ───────────── */
+
+// A: T3 Chat. Bubbles for Prompts, bare prose for Answers, hover actions, inline edit, regenerate split-button.
+function ThreadA({ thread, items, actions, busy, onOpenNav, navAlways }) {
+  if (!thread) return <NewThreadHero actions={actions} onOpenNav={onOpenNav} navAlways={navAlways} />;
+  return (
+    <div>
+      <header className="sticky top-0 z-10 flex items-center gap-2 bg-gradient-to-b from-zinc-950 via-zinc-950/90 to-transparent px-4 pb-6 pt-3">
+        <IconBtn icon={I.PanelLeft} title="Threads" onClick={onOpenNav} className={navAlways ? '' : 'md:hidden'} />
+        <TitleInline t={thread} onRename={actions.rename} className="text-sm text-zinc-400 hover:text-zinc-100" />
+        <div className="ml-auto flex">
+          <IconBtn icon={thread.pinned ? I.PinOff : I.Pin} title={thread.pinned ? 'Unpin' : 'Pin'} onClick={() => actions.togglePin(thread.id)} />
+          <IconBtn icon={I.Trash2} title="Delete Thread" onClick={() => actions.remove(thread.id)} />
+        </div>
+      </header>
+      <div className="mx-auto max-w-3xl space-y-8 px-4">
+        {items.map((m, i) => {
+          const later = items.length - i - 1;
+          return m.role === 'user'
+            ? <PromptA key={m.id} m={m} later={later} actions={actions} busy={busy} />
+            : <AnswerA key={m.id} m={m} later={later} actions={actions} busy={busy} isLast={i === items.length - 1} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PromptA({ m, later, actions, busy }) {
+  const { toast } = useApp();
+  const [edit, setEdit] = useState(false);
+  const [text, setText] = useState(m.text);
+  const [atts, setAtts] = useState(m.attachments ?? []);
+  if (edit) return (
+    <div id={`msg-${m.id}`} className="ml-auto max-w-[85%] rounded-2xl border border-zinc-600 bg-zinc-900 p-3">
+      {atts.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{atts.map((a) => <AttChip key={a.id} a={a} onRemove={() => setAtts(atts.filter((x) => x.id !== a.id))} />)}</div>}
+      <textarea autoFocus rows={3} value={text} onChange={(e) => setText(e.target.value)} className="w-full resize-none bg-transparent outline-none" />
+      <div className="mt-2 flex items-center justify-end gap-2 text-xs">
+        <span className="mr-auto text-zinc-500">Resends with the composer's Model and settings</span>
+        <button onClick={() => setEdit(false)} className="rounded-md px-2 py-1 hover:bg-zinc-800">Cancel</button>
+        <button onClick={() => { actions.editResend(m.id, text, atts); setEdit(false); if (later > 1) toast(`Removed ${later - 1} later message${later > 2 ? 's' : ''}`); }}
+          className="rounded-md bg-brand-600 px-3 py-1 font-medium hover:bg-brand-500">Send</button>
+      </div>
+    </div>
+  );
+  return (
+    <div id={`msg-${m.id}`} className="group flex flex-col items-end">
+      <MsgAtts atts={m.attachments} align="end" />
+      {m.text && <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-800 px-4 py-2.5">{m.text}</div>}
+      <div className="mt-1 flex opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+        <IconBtn icon={I.Pencil} size={14} title="Edit and resend" disabled={busy} onClick={() => setEdit(true)} />
+        <IconBtn icon={I.Copy} size={14} title="Copy" onClick={() => actions.copy(m.text)} />
+      </div>
+    </div>
+  );
+}
+
+function ReasoningA({ text, streaming }) {
+  const [open, setOpen] = useState(streaming);
+  useEffect(() => setOpen(streaming), [streaming]);
+  if (!text) return null;
+  return (
+    <div className="mb-3">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200">
+        {streaming ? <I.Loader2 size={14} className="animate-spin" /> : <I.Brain size={14} />}
+        {streaming ? 'Thinking…' : 'Reasoning'}
+        <I.ChevronDown size={14} className={cx('transition', open && 'rotate-180')} />
+      </button>
+      {open && <div className="mt-2 whitespace-pre-wrap border-l-2 border-zinc-700 pl-3 text-sm text-zinc-400">{text}</div>}
+    </div>
+  );
+}
+
+function AnswerA({ m, later, actions, busy, isLast }) {
+  const [regenOpen, setRegenOpen] = useState(false);
+  const { toast } = useApp();
+  const model = modelById(m.modelId);
+  const orig = { modelId: m.modelId, reasoningLevel: m.reasoningLevel, webSearch: m.webSearch };
+  const regen = (s) => { actions.regenerate(m.id, s); if (later) toast(`Removed ${later} later message${later > 1 ? 's' : ''}`); };
+  return (
+    <div id={`msg-${m.id}`} className="group">
+      <ReasoningA text={m.reasoning} streaming={m.live && !m.text} />
+      {m.status === 'error'
+        ? <div className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+            <I.AlertTriangle size={16} className="mt-0.5 shrink-0" /><div className="flex-1">{m.error}</div>
+            <button onClick={() => regen(orig)} disabled={busy} className="shrink-0 rounded-md border border-red-500/40 px-2 py-0.5 text-xs hover:bg-red-500/20">Regenerate</button>
+          </div>
+        : <Md text={m.text} live={m.live && !!m.text} />}
+      {m.sources?.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {m.sources.map((s) => (
+            <a key={s.url} href={s.url} target="_blank" className="flex items-center gap-1.5 rounded-full border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-100">
+              <span className="grid size-4 place-items-center rounded-full bg-zinc-700 text-[9px] uppercase">{domain(s.url)[0]}</span>{domain(s.url)}
+            </a>
+          ))}
+        </div>
+      )}
+      {m.status === 'stopped' && <div className="mt-2 inline-flex items-center gap-1 text-xs text-amber-400"><I.Square size={10} fill="currentColor" />Stopped</div>}
+      {!m.live && (
+        <div className={cx('mt-2 flex items-center gap-1 transition group-hover:opacity-100 focus-within:opacity-100', !isLast && !regenOpen && 'opacity-0')}>
+          <IconBtn icon={I.Copy} size={14} title="Copy" onClick={() => actions.copy(m.text)} />
+          <div className="flex items-center">
+            <IconBtn icon={I.RefreshCw} size={14} title={`Regenerate (${settingsLabel(orig)})`} disabled={busy} onClick={() => regen(orig)} />
+            <Pop open={regenOpen} setOpen={setRegenOpen} className="bottom-full left-0 mb-2"
+              trigger={<IconBtn icon={I.ChevronDown} size={12} title="Regenerate with another Model" disabled={busy} onClick={() => setRegenOpen(!regenOpen)} />}>
+              <div className="border-b border-zinc-800 px-3 py-2 text-xs text-zinc-400">Regenerate with…</div>
+              <ModelPickerPanel modelId={m.modelId} onSelect={(id) => { setRegenOpen(false); regen({ ...orig, modelId: id, reasoningLevel: resolveReasoning(modelById(id), m.reasoningLevel) }); }} />
+            </Pop>
+          </div>
+          <span className="group/stats relative ml-1 flex cursor-default items-center gap-1 text-xs text-zinc-500">
+            {model.name} · {m.reasoningLevel ?? 'no reasoning'} {m.webSearch && <I.Globe size={11} />}
+            <span className="pointer-events-none absolute bottom-full left-0 mb-2 hidden w-max rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-300 group-hover/stats:block">{stats(m)}</span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// B: Transcript. No bubbles; a metadata gutter with always-visible actions; edits go through the main composer.
+function ThreadB({ thread, items, actions, busy, onOpenNav, navAlways, composerSettings }) {
+  const { ask } = useApp();
+  if (!thread) return <NewThreadHero actions={actions} onOpenNav={onOpenNav} navAlways={navAlways} />;
+  const regen = (m, later) => {
+    const go = () => actions.regenerate(m.id, composerSettings);
+    later ? ask({ title: 'Regenerate this Answer?', body: `Uses the composer's settings (${settingsLabel(composerSettings)}). ${later} later message${later > 1 ? 's' : ''} will be deleted.`, ok: 'Regenerate', onOk: go }) : go();
+  };
+  return (
+    <div>
+      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-zinc-800 bg-zinc-950/95 px-4 py-2.5 backdrop-blur">
+        <IconBtn icon={I.PanelLeft} title="Threads" onClick={onOpenNav} className={navAlways ? '' : 'md:hidden'} />
+        <TitleInline t={thread} onRename={actions.rename} className="font-semibold" />
+        <button onClick={() => actions.togglePin(thread.id)}
+          className={cx('flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs', thread.pinned ? 'border-brand-500/50 text-brand-300' : 'border-zinc-700 text-zinc-400')}>
+          <I.Pin size={11} />{thread.pinned ? 'Pinned' : 'Pin'}
+        </button>
+        <span className="ml-auto hidden shrink-0 text-xs text-zinc-500 sm:block">{items.length} messages</span>
+        <IconBtn icon={I.Trash2} title="Delete Thread" onClick={() => actions.remove(thread.id)} />
+      </header>
+      <div className="mx-auto max-w-5xl divide-y divide-zinc-800/70 px-4">
+        {items.map((m, i) => {
+          const later = items.length - i - 1;
+          const model = m.role === 'assistant' && modelById(m.modelId);
+          return (
+            <div key={m.id} id={`msg-${m.id}`} className="grid gap-x-6 gap-y-2 py-5 sm:grid-cols-[10rem_1fr]">
+              <div className="space-y-1 text-xs text-zinc-500">
+                {m.role === 'user'
+                  ? <div className="font-medium text-zinc-200">You</div>
+                  : <div className="flex items-center gap-1.5 font-medium text-zinc-200"><ProviderIcon providerId={model.provider} />{model.name}</div>}
+                {model && <div>{m.reasoningLevel ?? 'no reasoning'} · web {m.webSearch ? 'on' : 'off'}</div>}
+                {m.usage && <div className="hidden sm:block">{k(m.usage.input)} in · {k(m.usage.output)} out<br />TTFT {m.timing.ttft.toFixed(1)}s · {m.timing.duration.toFixed(1)}s</div>}
+                {m.live && <div className="flex items-center gap-1 text-sky-400"><I.Loader2 size={11} className="animate-spin" />{m.text ? 'writing' : 'thinking'}</div>}
+                {m.status === 'stopped' && <div className="text-amber-400">■ stopped</div>}
+                {m.status === 'error' && <div className="text-red-400">● error</div>}
+                {!m.live && (
+                  <div className="flex flex-wrap gap-x-2 pt-1 text-zinc-400 sm:flex-col">
+                    {m.role === 'user'
+                      ? <button disabled={busy} onClick={() => actions.startComposerEdit(m.id)} className="text-left hover:text-zinc-100 disabled:opacity-40">Edit</button>
+                      : <button disabled={busy} onClick={() => regen(m, later)} title={`Uses ${settingsLabel(composerSettings)}`} className="text-left hover:text-zinc-100 disabled:opacity-40">Regenerate</button>}
+                    <button onClick={() => actions.copy(m.text)} className="text-left hover:text-zinc-100">Copy</button>
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <MsgAtts atts={m.attachments} large />
+                <ReasoningB text={m.reasoning} streaming={m.live && !m.text} />
+                {m.status === 'error' ? <div className="font-mono text-sm text-red-300">{m.error}</div>
+                  : m.role === 'user' ? <div className="whitespace-pre-wrap">{m.text}</div> : <Md text={m.text} live={m.live && !!m.text} />}
+                {m.sources?.length > 0 && (
+                  <ol className="mt-4 space-y-0.5 border-t border-zinc-800 pt-2 text-xs text-zinc-500">
+                    {m.sources.map((s, j) => <li key={s.url}>[{j + 1}] <a href={s.url} target="_blank" className="text-zinc-300 hover:underline">{s.title}</a> · {domain(s.url)}</li>)}
+                  </ol>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReasoningB({ text, streaming }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  if (streaming) return (
+    <div className="mb-3 flex max-h-16 flex-col justify-end overflow-hidden border-l-2 border-sky-500/50 pl-3 text-sm italic text-zinc-500 [mask-image:linear-gradient(to_bottom,transparent,black_60%)]">{text}</div>
+  );
+  return (
+    <div className="mb-3 border-l-2 border-zinc-700 pl-3 text-sm text-zinc-500">
+      <div className={open ? 'whitespace-pre-wrap' : 'line-clamp-1'}>{text}</div>
+      <button onClick={() => setOpen(!open)} className="mt-0.5 text-xs text-zinc-400 hover:underline">{open ? 'Hide reasoning' : `Show reasoning · ${text.split(/\s+/).length} words`}</button>
+    </div>
+  );
+}
+
+// C: Turn cards. Prompt + Answer grouped; Answer / Reasoning / Sources tabs; explicit regenerate panel.
+function ThreadC({ thread, items, actions, busy, onOpenNav, navAlways, composerSettings }) {
+  if (!thread) return <NewThreadHero actions={actions} onOpenNav={onOpenNav} navAlways={navAlways} />;
+  const turns = groupTurns(items);
+  return (
+    <div>
+      <div className="sticky top-0 z-10 flex items-center bg-zinc-950/80 px-3 py-2 backdrop-blur">
+        <IconBtn icon={I.PanelLeft} title="Threads" onClick={onOpenNav} className={navAlways ? '' : 'md:hidden'} />
+      </div>
+      <div className="mx-auto max-w-3xl px-4">
+        <div className="mb-6">
+          <TitleInline t={thread} onRename={actions.rename} className="w-full text-2xl font-semibold" />
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+            <button onClick={() => actions.togglePin(thread.id)} className={cx('flex items-center gap-1 rounded-md border px-2 py-0.5', thread.pinned ? 'border-brand-500/50 text-brand-300' : 'border-zinc-700')}>
+              <I.Pin size={11} />{thread.pinned ? 'Pinned' : 'Pin'}
+            </button>
+            <span>{turns.length} turns</span><span>·</span><span>last message {rel(thread.lastMessageAt)} ago</span>
+            <button onClick={() => actions.remove(thread.id)} className="ml-auto flex items-center gap-1 hover:text-red-300"><I.Trash2 size={12} />Delete</button>
+          </div>
+        </div>
+        <div className="space-y-5">
+          {turns.map((turn, i) => {
+            const idx = items.indexOf(turn.prompt);
+            return <TurnCard key={turn.prompt.id} turn={turn} n={i + 1} total={turns.length} laterTurns={turns.length - i - 1} later={items.length - idx - 1} actions={actions} busy={busy} composerSettings={composerSettings} />;
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TurnCard({ turn: { prompt: p, answer: a }, n, total, laterTurns, actions, busy, composerSettings }) {
+  const [tab, setTab] = useState('answer');
+  const [edit, setEdit] = useState(false);
+  const [text, setText] = useState(p.text);
+  const [atts, setAtts] = useState(p.attachments ?? []);
+  const [regen, setRegen] = useState(null);
+  const [pickOpen, setPickOpen] = useState(false);
+  const thinking = a?.live && !a.text;
+  useEffect(() => { if (a?.live) setTab(thinking ? 'reasoning' : 'answer'); }, [thinking]);
+  const warn = laterTurns > 0 && <p className="text-xs text-amber-400">Deletes the {laterTurns} later turn{laterTurns > 1 && 's'}.</p>;
+  const regenModel = regen && modelById(regen.modelId);
+  return (
+    <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40">
+      <div id={`msg-${p.id}`} className="bg-zinc-900 px-5 py-4">
+        <div className="mb-2 flex items-center text-[11px] uppercase tracking-wider text-zinc-500">
+          Turn {n} of {total}
+          {!edit && <button disabled={busy} onClick={() => setEdit(true)} className="ml-auto flex items-center gap-1 normal-case tracking-normal hover:text-zinc-200 disabled:opacity-40"><I.Pencil size={11} />Edit</button>}
+        </div>
+        {edit ? (
+          <div className="space-y-2">
+            {atts.length > 0 && <div className="flex flex-wrap gap-1.5">{atts.map((x) => <AttChip key={x.id} a={x} onRemove={() => setAtts(atts.filter((y) => y.id !== x.id))} />)}</div>}
+            <textarea autoFocus rows={3} value={text} onChange={(e) => setText(e.target.value)} className="w-full resize-none rounded-md border border-zinc-700 bg-zinc-950 p-2 outline-none" />
+            <div className="flex items-center gap-2">
+              <div className="mr-auto space-y-0.5"><p className="text-xs text-zinc-500">Resends with {settingsLabel(composerSettings)}</p>{warn}</div>
+              <button onClick={() => setEdit(false)} className="rounded-md px-2 py-1 text-xs hover:bg-zinc-800">Cancel</button>
+              <button onClick={() => { actions.editResend(p.id, text, atts); setEdit(false); }} className="rounded-md bg-brand-600 px-3 py-1 text-xs font-medium hover:bg-brand-500">Save & resend</button>
+            </div>
+          </div>
+        ) : (
+          <><MsgAtts atts={p.attachments} />{p.text && <div className="whitespace-pre-wrap">{p.text}</div>}</>
+        )}
+      </div>
+      {a && (
+        <div id={`msg-${a.id}`}>
+          <div className="flex gap-4 border-b border-zinc-800 px-5 text-sm">
+            {[['answer', 'Answer'], ['reasoning', 'Reasoning'], ['sources', `Sources${a.sources?.length ? ` (${a.sources.length})` : ''}`]].map(([id, label]) => (
+              <button key={id} onClick={() => setTab(id)} disabled={(id === 'reasoning' && !a.reasoning) || (id === 'sources' && !a.sources?.length)}
+                className={cx('-mb-px flex items-center gap-1.5 border-b-2 py-2 disabled:opacity-30', tab === id ? 'border-brand-500 text-zinc-100' : 'border-transparent text-zinc-500 hover:text-zinc-300')}>
+                {label}{id === 'reasoning' && thinking && <span className="size-1.5 animate-pulse rounded-full bg-sky-400" />}
+              </button>
+            ))}
+          </div>
+          <div className="px-5 py-4">
+            {tab === 'answer' && (a.status === 'error'
+              ? <div className="flex items-start gap-2 text-sm text-red-300"><I.AlertTriangle size={16} className="mt-0.5 shrink-0" />{a.error}</div>
+              : thinking ? <p className="text-sm italic text-zinc-500">Thinking… see Reasoning.</p>
+              : <Md text={a.text} live={a.live} />)}
+            {tab === 'reasoning' && <div className="whitespace-pre-wrap text-sm text-zinc-400">{a.reasoning}</div>}
+            {tab === 'sources' && <ul className="space-y-2 text-sm">{a.sources.map((s) => <li key={s.url}><a href={s.url} target="_blank" className="text-brand-300 hover:underline">{s.title}</a><div className="text-xs text-zinc-500">{s.url}</div></li>)}</ul>}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 px-5 py-2 text-[11px] text-zinc-500">
+            <span className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300"><ProviderIcon providerId={modelById(a.modelId).provider} size={11} />{modelById(a.modelId).name}</span>
+            <span className="rounded bg-zinc-800 px-1.5 py-0.5">{a.reasoningLevel ?? 'no reasoning'}</span>
+            {a.webSearch && <span className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5"><I.Globe size={10} />web</span>}
+            {a.status === 'stopped' && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-400">stopped</span>}
+            {a.status === 'error' && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-400">error</span>}
+            {a.usage && <span>{stats(a)}</span>}
+            {!a.live && (
+              <span className="ml-auto flex gap-3">
+                <button onClick={() => actions.copy(a.text)} className="hover:text-zinc-200">Copy</button>
+                <button disabled={busy} onClick={() => setRegen({ modelId: a.modelId, reasoningLevel: a.reasoningLevel, webSearch: a.webSearch })} className="hover:text-zinc-200 disabled:opacity-40">Regenerate…</button>
+              </span>
+            )}
+          </div>
+          {regen && (
+            <div className="space-y-3 border-t border-zinc-800 bg-zinc-950/60 px-5 py-3 text-xs">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-zinc-400">Regenerate with</span>
+                <Pop open={pickOpen} setOpen={setPickOpen} className="bottom-full left-0 mb-2"
+                  trigger={<button onClick={() => setPickOpen(!pickOpen)} className="flex items-center gap-1.5 rounded-md border border-zinc-700 px-2 py-1"><ProviderIcon providerId={regenModel.provider} size={12} />{regenModel.name}<I.ChevronDown size={12} /></button>}>
+                  <ModelPickerPanel modelId={regen.modelId} onSelect={(id) => { setPickOpen(false); setRegen({ ...regen, modelId: id, reasoningLevel: resolveReasoning(modelById(id), regen.reasoningLevel) }); }} />
+                </Pop>
+                {regenModel.reasoning.length > 0 && (
+                  <select value={regen.reasoningLevel} onChange={(e) => setRegen({ ...regen, reasoningLevel: e.target.value })} className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1">
+                    {regenModel.reasoning.map((l) => <option key={l}>{l}</option>)}
+                  </select>
+                )}
+                <label className="flex items-center gap-1.5"><input type="checkbox" checked={regen.webSearch} onChange={(e) => setRegen({ ...regen, webSearch: e.target.checked })} />Web search</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="mr-auto">{warn}</div>
+                <button onClick={() => setRegen(null)} className="rounded-md px-2 py-1 hover:bg-zinc-800">Cancel</button>
+                <button onClick={() => { actions.regenerate(a.id, regen); setRegen(null); }} className="rounded-md bg-brand-600 px-3 py-1 font-medium hover:bg-brand-500">Regenerate</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ───────────── Sidebar variants ───────────── */
+
+const UserFooter = () => (
+  <div className="flex items-center gap-2 border-t border-zinc-800 p-3 text-sm">
+    <div className="grid size-8 place-items-center rounded-full bg-brand-600 font-semibold">A</div>
+    <div className="leading-tight"><div>Adwin</div><div className="text-xs text-zinc-500">Admin</div></div>
+    <IconBtn icon={I.Settings} title="Settings" className="ml-auto" />
+  </div>
+);
+
+// A: T3 Chat. Persistent list, date groups, inline search, hover actions.
+function SidebarA({ db, activeId, actions, open, setOpen }) {
+  const [q, setQ] = useState('');
+  const results = useMemo(() => searchDb(db, q), [db, q]);
+  const body = (
+    <aside className="flex h-full w-72 flex-col border-r border-zinc-800 bg-zinc-900">
+      <div className="px-3 pb-2 pt-4 text-center font-semibold tracking-tight">chatslop</div>
+      <div className="px-3"><button onClick={actions.newThread} className="w-full rounded-lg bg-brand-600/90 py-2 text-sm font-medium hover:bg-brand-600">New Chat</button></div>
+      <div className="mx-3 mt-3 flex items-center gap-2 border-b border-zinc-800 pb-2 text-zinc-500">
+        <I.Search size={14} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your threads…" className="w-full bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500" />
+        {q && <IconBtn icon={I.X} size={12} title="Clear" onClick={() => setQ('')} />}
+      </div>
+      <nav className="flex-1 overflow-y-auto px-2 py-2">
+        {q ? <SearchResults results={results} q={q} actions={actions} />
+          : groupThreads(db.threads).map((g) => (
+            <section key={g.label} className="mb-3">
+              <h3 className="flex items-center gap-1 px-2 pb-1 text-xs font-medium text-brand-300/80">{g.label === 'Pinned' && <I.Pin size={11} />}{g.label}</h3>
+              {g.threads.map((t) => <ThreadItemA key={t.id} t={t} active={t.id === activeId} live={!!db.lives[t.id]} actions={actions} />)}
+            </section>
+          ))}
+      </nav>
+      <UserFooter />
+    </aside>
+  );
+  return (
+    <>
+      <div className="hidden md:flex">{body}</div>
+      {open && <div className="fixed inset-0 z-40 md:hidden"><div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} /><div className="relative h-full w-72">{body}</div></div>}
+    </>
+  );
+}
+
+function ThreadItemA({ t, active, live, actions }) {
+  const [edit, setEdit] = useState(false);
+  return (
+    <div className={cx('group relative flex items-center rounded-lg px-2 py-1.5 text-sm', active ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300 hover:bg-zinc-800/60')}>
+      <TitleInline t={t} edit={edit} setEdit={setEdit} onRename={actions.rename} onClick={() => actions.open(t.id)} className="flex-1" />
+      {live && <I.Loader2 size={13} className="ml-1 shrink-0 animate-spin text-brand-400 group-hover:hidden" />}
+      {!edit && (
+        <div className="absolute right-1 hidden rounded-md bg-zinc-800 group-hover:flex">
+          <IconBtn icon={t.pinned ? I.PinOff : I.Pin} size={13} title={t.pinned ? 'Unpin' : 'Pin'} onClick={() => actions.togglePin(t.id)} />
+          <IconBtn icon={I.Pencil} size={13} title="Rename" onClick={() => setEdit(true)} />
+          <IconBtn icon={I.Trash2} size={13} title="Delete" onClick={() => actions.remove(t.id)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// B: Icon rail + ⌘K command palette. Threads, search and Thread actions all live in the palette.
+function SidebarB({ db, activeId, actions, open, setOpen }) {
+  useEffect(() => {
+    const h = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setOpen((o) => !o); } };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
+  const pinned = db.threads.filter((t) => t.pinned);
+  const liveCount = Object.keys(db.lives).length;
+  return (
+    <>
+      <aside className="hidden w-14 flex-col items-center gap-1 border-r border-zinc-800 bg-zinc-900 py-3 md:flex">
+        <div className="mb-2 grid size-8 place-items-center rounded-lg bg-brand-600 text-xs font-bold">cs</div>
+        <IconBtn icon={I.SquarePen} title="New Thread" onClick={actions.newThread} size={18} className="p-2" />
+        <IconBtn icon={I.Search} title="Search Threads (⌘K)" onClick={() => setOpen(true)} size={18} className="p-2" />
+        <div className="my-2 h-px w-6 bg-zinc-800" />
+        {pinned.map((t) => (
+          <button key={t.id} title={t.title} onClick={() => actions.open(t.id)}
+            className={cx('relative grid size-9 place-items-center rounded-lg text-sm font-medium', t.id === activeId ? 'bg-zinc-700 ring-1 ring-brand-500' : 'bg-zinc-800 hover:bg-zinc-700')}>
+            {[...t.title].slice(0, 2).join('')}
+            {db.lives[t.id] && <span className="absolute -right-0.5 -top-0.5 size-2.5 animate-pulse rounded-full bg-sky-400" />}
+          </button>
+        ))}
+        <div className="flex-1" />
+        {liveCount > 0 && <button onClick={() => setOpen(true)} title={`${liveCount} Answer(s) generating`} className="mb-2 flex items-center gap-1 text-xs text-sky-400"><I.Loader2 size={12} className="animate-spin" />{liveCount}</button>}
+        <div className="grid size-8 place-items-center rounded-full bg-zinc-700 text-sm">A</div>
+      </aside>
+      {open && <Palette db={db} activeId={activeId} actions={actions} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function Palette({ db, activeId, actions, onClose }) {
+  const [q, setQ] = useState('');
+  const [sel, setSel] = useState(0);
+  const [renaming, setRenaming] = useState(false);
+  const thread = db.threads.find((t) => t.id === activeId);
+  const sorted = [...db.threads].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+  const run = (f) => () => { f(); onClose(); };
+  const entries = renaming ? [] : q
+    ? searchDb(db, q).flatMap(({ thread: t, hits }) => [
+        { section: 'Threads', key: t.id, icon: I.MessageSquare, label: <Hl text={t.title} q={q} />, hint: hits.length ? `${hits.length} hit${hits.length > 1 ? 's' : ''}` : '', run: run(() => actions.open(t.id)) },
+        ...hits.slice(0, 2).map((h) => ({ section: 'Threads', key: h.id, indent: true, label: <Hl text={h.snippet} q={q} />, run: run(() => actions.openHit(t.id, h.id)) })),
+      ])
+    : [
+        { section: 'Actions', key: 'new', icon: I.SquarePen, label: 'New Thread', run: run(actions.newThread) },
+        thread && { section: 'Actions', key: 'pin', icon: I.Pin, label: thread.pinned ? 'Unpin this Thread' : 'Pin this Thread', run: run(() => actions.togglePin(thread.id)) },
+        thread && { section: 'Actions', key: 'rename', icon: I.Pencil, label: 'Rename this Thread…', run: () => { setRenaming(true); setQ(thread.title); } },
+        thread && { section: 'Actions', key: 'del', icon: I.Trash2, label: 'Delete this Thread', run: run(() => actions.remove(thread.id)) },
+        ...sorted.filter((t) => t.pinned).map((t) => ({ section: 'Pinned', key: t.id, icon: I.Pin, label: <Title t={t} />, live: db.lives[t.id], hint: rel(t.lastMessageAt), run: run(() => actions.open(t.id)) })),
+        ...sorted.filter((t) => !t.pinned).slice(0, 8).map((t) => ({ section: 'Recent', key: t.id, icon: I.MessageSquare, label: <Title t={t} />, live: db.lives[t.id], hint: rel(t.lastMessageAt), run: run(() => actions.open(t.id)) })),
+      ].filter(Boolean);
+  useEffect(() => setSel(0), [q]);
+  const onKey = (e) => {
+    if (e.key === 'Escape') onClose();
+    if (renaming && e.key === 'Enter') { if (q.trim()) actions.rename(thread.id, q.trim()); onClose(); }
+    if (renaming) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, entries.length - 1)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
+    if (e.key === 'Enter') entries[sel]?.run();
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-[12vh]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-xl overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+        <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
+          {renaming ? <I.Pencil size={16} className="text-zinc-500" /> : <I.Search size={16} className="text-zinc-500" />}
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey}
+            placeholder={renaming ? 'New title' : 'Search Threads and messages, or run an action…'} className="w-full bg-transparent outline-none placeholder:text-zinc-500" />
+          <kbd className="text-[10px] text-zinc-500">esc</kbd>
+        </div>
+        <div className="max-h-[50vh] overflow-y-auto p-1.5">
+          {renaming && <p className="px-3 py-2 text-xs text-zinc-500">Enter to rename “{thread.title}”.</p>}
+          {!renaming && !entries.length && <p className="px-3 py-6 text-center text-sm text-zinc-500">No Threads match “{q}”.</p>}
+          {entries.map((e, i) => (
+            <React.Fragment key={e.key + i}>
+              {e.section !== entries[i - 1]?.section && <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{e.section}</div>}
+              <button onMouseEnter={() => setSel(i)} onClick={e.run}
+                className={cx('flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm', e.indent && 'pl-9 text-xs text-zinc-400', i === sel && 'bg-zinc-800')}>
+                {e.icon && <e.icon size={14} className="shrink-0 text-zinc-500" />}
+                <span className="min-w-0 flex-1 truncate">{e.label}</span>
+                {e.live && <I.Loader2 size={12} className="animate-spin text-sky-400" />}
+                {e.hint && <span className="text-xs text-zinc-500">{e.hint}</span>}
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+        <div className="flex gap-4 border-t border-zinc-800 px-4 py-2 text-[11px] text-zinc-500"><span>↑↓ navigate</span><span>↵ open</span><span>⌘K toggle</span></div>
+      </div>
+    </div>
+  );
+}
+
+// C: Overlay drawer on every width. Search-first, two-line rows with previews, ⋯ menu per Thread.
+function SidebarC({ db, activeId, actions, open, setOpen }) {
+  const [q, setQ] = useState('');
+  const results = useMemo(() => searchDb(db, q), [db, q]);
+  if (!open) return null;
+  const sorted = [...db.threads].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+  const pinned = sorted.filter((t) => t.pinned);
+  return (
+    <div className="fixed inset-0 z-40">
+      <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
+      <aside className="relative flex h-full w-full max-w-sm flex-col border-r border-zinc-800 bg-zinc-900 shadow-2xl">
+        <div className="flex items-center gap-2 p-3">
+          <div className="flex flex-1 items-center gap-2 rounded-lg bg-zinc-800 px-3 py-2">
+            <I.Search size={15} className="text-zinc-500" />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search Threads" className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-500" />
+          </div>
+          <IconBtn icon={I.SquarePen} title="New Thread" onClick={actions.newThread} size={18} className="p-2" />
+          <IconBtn icon={I.X} title="Close" onClick={() => setOpen(false)} size={18} className="p-2" />
+        </div>
+        {q ? <div className="flex-1 overflow-y-auto px-2"><SearchResults results={results} q={q} actions={actions} rich /></div> : (
+          <>
+            {pinned.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto px-3 pb-3">
+                {pinned.map((t) => (
+                  <button key={t.id} onClick={() => actions.open(t.id)}
+                    className={cx('flex max-w-44 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs', t.id === activeId ? 'border-brand-500 bg-brand-500/10' : 'border-zinc-700 hover:bg-zinc-800')}>
+                    <I.Pin size={10} className="shrink-0 text-brand-300" /><Title t={t} />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex-1 divide-y divide-zinc-800/60 overflow-y-auto border-t border-zinc-800">
+              {sorted.map((t) => <ThreadRowC key={t.id} t={t} db={db} active={t.id === activeId} actions={actions} />)}
+            </div>
+          </>
+        )}
+        <UserFooter />
+      </aside>
+    </div>
+  );
+}
+
+function ThreadRowC({ t, db, active, actions }) {
+  const [menu, setMenu] = useState(false);
+  const [edit, setEdit] = useState(false);
+  const live = db.lives[t.id];
+  const last = (db.messages[t.id] ?? []).at(-1);
+  const preview = live ? (live.text ? live.text : 'Thinking…') : last?.text || (last?.status === 'error' ? 'Error' : '');
+  return (
+    <div className={cx('group flex gap-3 px-4 py-3', active ? 'bg-zinc-800' : 'hover:bg-zinc-800/50')}>
+      <ProviderIcon providerId={modelById(t.modelId).provider} size={16} />
+      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => !edit && actions.open(t.id)}>
+        <div className="flex items-center gap-2 text-sm font-medium">
+          {edit ? <TitleInline t={t} edit setEdit={setEdit} onRename={actions.rename} /> : <Title t={t} />}
+          <span className="ml-auto shrink-0 text-[11px] font-normal text-zinc-500">{rel(t.lastMessageAt)}</span>
+        </div>
+        <div className={cx('mt-0.5 truncate text-xs', live ? 'text-sky-400' : 'text-zinc-500')}>{live && <I.Loader2 size={10} className="mr-1 inline animate-spin" />}{preview.replace(/[`*#]/g, '')}</div>
+      </div>
+      <Pop open={menu} setOpen={setMenu} className="right-0 top-full mt-1 w-36 p-1 text-sm"
+        trigger={<IconBtn icon={I.MoreHorizontal} title="Thread actions" onClick={() => setMenu(!menu)} className="opacity-0 group-hover:opacity-100" />}>
+        {[[t.pinned ? 'Unpin' : 'Pin', () => actions.togglePin(t.id)], ['Rename', () => setEdit(true)], ['Delete', () => actions.remove(t.id)]].map(([label, f]) => (
+          <button key={label} onClick={() => { setMenu(false); f(); }} className={cx('block w-full rounded-md px-2 py-1.5 text-left hover:bg-zinc-800', label === 'Delete' && 'text-red-300')}>{label}</button>
+        ))}
+      </Pop>
+    </div>
+  );
+}
+
+/* ───────────── Composer variants ───────────── */
+
+function AutoTextarea({ c, className, placeholder = 'Type your message here…', minRows = 1 }) {
+  const ref = useRef(null);
+  useEffect(() => { const el = ref.current; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 240)}px`; }, [c.text]);
+  useEffect(() => { ref.current.focus(); }, [c.focusKey]);
+  return (
+    <textarea ref={ref} rows={minRows} value={c.text} placeholder={placeholder} onChange={(e) => c.setText(e.target.value)} onPaste={c.onPaste}
+      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (c.canSend) c.send(); } }}
+      className={cx('w-full resize-none bg-transparent outline-none placeholder:text-zinc-500', className)} />
+  );
+}
+
+function AttachInput({ c, children, className, title }) {
+  const ref = useRef(null);
+  return (
+    <>
+      <input ref={ref} type="file" multiple accept={c.accept} className="hidden" onChange={(e) => { c.addFiles([...e.target.files]); e.target.value = ''; }} />
+      <button type="button" title={title ?? `Attach (${c.readsLabel})`} onClick={() => ref.current.click()} className={className}>{children}</button>
+    </>
+  );
+}
+
+function SendButton({ c, className }) {
+  if (c.streaming) return <button onClick={c.stop} title="Stop" className={cx('grid size-9 shrink-0 place-items-center rounded-lg bg-zinc-200 text-zinc-900 hover:bg-white', className)}><I.Square size={14} fill="currentColor" /></button>;
+  return (
+    <button onClick={c.send} disabled={!c.canSend} title={c.blockReason ?? 'Send (Enter)'}
+      className={cx('grid size-9 shrink-0 place-items-center rounded-lg bg-brand-600 hover:bg-brand-500 disabled:bg-zinc-800 disabled:text-zinc-500', className)}>
+      <I.ArrowUp size={18} />
+    </button>
+  );
+}
+
+const EditBanner = ({ c }) => c.editing && (
+  <div className="mb-2 flex items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300">
+    <I.Pencil size={12} />Editing a Prompt.{c.editing.later > 1 && ` Sending deletes the ${c.editing.later - 1} message${c.editing.later > 2 ? 's' : ''} after its Answer.`}
+    <button onClick={c.cancelEdit} className="ml-auto underline">Cancel</button>
+  </div>
+);
+
+const BlockHint = ({ c }) => c.blockReason && c.hasContent && !c.streaming && <p className="px-2 pt-1 text-xs text-red-300">{c.blockReason}</p>;
+
+// A: T3 Chat. Floating box, inline pills for Model / Reasoning / Search / Attach.
+function ComposerA({ c }) {
+  const [pick, setPick] = useState(false), [rOpen, setROpen] = useState(false);
+  const pill = 'flex items-center gap-1.5 rounded-full border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-800';
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 px-2 sm:px-4">
+      <div className="pointer-events-auto mx-auto max-w-3xl rounded-t-2xl border border-b-0 border-zinc-700/80 bg-zinc-900/90 p-2 pb-3 shadow-2xl backdrop-blur">
+        <EditBanner c={c} />
+        {c.attachments.length > 0 && <div className="flex flex-wrap gap-1.5 p-1">{c.attachments.map((a) => <AttChip key={a.id} a={a} bad={c.unreadable(a)} onRemove={() => c.removeAttachment(a.id)} />)}</div>}
+        <AutoTextarea c={c} minRows={2} className="px-2 py-2" />
+        <BlockHint c={c} />
+        <div className="flex flex-wrap items-center gap-1.5 px-1">
+          <Pop open={pick} setOpen={setPick} className="bottom-full left-0 mb-2"
+            trigger={<button onClick={() => setPick(!pick)} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm hover:bg-zinc-800"><ProviderIcon providerId={c.model.provider} />{c.model.name}<I.ChevronDown size={14} className="text-zinc-500" /></button>}>
+            <ModelPickerPanel modelId={c.model.id} onSelect={(id) => { c.setModelId(id); setPick(false); }} />
+          </Pop>
+          {c.model.reasoning.length > 0 && (
+            <Pop open={rOpen} setOpen={setROpen} className="bottom-full left-0 mb-2 w-40 p-1"
+              trigger={<button onClick={() => setROpen(!rOpen)} className={pill}><I.Brain size={13} />{c.reasoning}</button>}>
+              {c.model.reasoning.map((l) => (
+                <button key={l} onClick={() => { c.setReasoning(l); setROpen(false); }} className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-zinc-800">
+                  {l}{l === c.reasoning && <I.Check size={14} />}
+                </button>
+              ))}
+            </Pop>
+          )}
+          <button onClick={() => c.setWeb(!c.web)} aria-pressed={c.web} className={cx(pill, c.web && 'border-sky-500/50 bg-sky-500/15 text-sky-300')}><I.Globe size={13} />Search</button>
+          <AttachInput c={c} className={pill}><I.Paperclip size={13} />Attach</AttachInput>
+          <div className="ml-auto"><SendButton c={c} /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// B: Pill input. One settings chip opens Model list + Reasoning + Web search together; "+" for Attachments.
+function ComposerB({ c }) {
+  const [settings, setSettings] = useState(false), [plus, setPlus] = useState(false);
+  return (
+    <div className="px-3 pb-4 pt-2">
+      <div className="mx-auto max-w-3xl">
+        <EditBanner c={c} />
+        {c.attachments.length > 0 && (
+          <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+            {c.attachments.map((a) => (
+              <div key={a.id} title={c.unreadable(a) ? `The selected Model can't read this ${a.type}` : a.name}
+                className={cx('relative size-16 shrink-0 overflow-hidden rounded-xl border', c.unreadable(a) ? 'border-red-500 ring-2 ring-red-500/40' : 'border-zinc-700')}>
+                {a.type === 'image' ? <Thumb a={a} className="size-full" />
+                  : <div className="flex size-full flex-col items-center justify-center gap-1 bg-zinc-800 p-1 text-[9px] text-zinc-400">{a.type === 'pdf' ? <I.FileText size={18} /> : <I.FileCode size={18} />}<span className="w-full truncate text-center">{a.name}</span></div>}
+                {a.progress < 100 && <div className="absolute inset-0 grid place-items-center bg-black/60 text-[10px]">{a.progress}%</div>}
+                <button onClick={() => c.removeAttachment(a.id)} aria-label={`Remove ${a.name}`} className="absolute right-0.5 top-0.5 rounded-full bg-black/70 p-0.5"><I.X size={10} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-1.5 rounded-[26px] border border-zinc-700 bg-zinc-900 p-1.5 focus-within:border-zinc-500">
+          <Pop open={plus} setOpen={setPlus} className="bottom-full left-0 mb-2 w-60 p-1"
+            trigger={<button onClick={() => setPlus(!plus)} aria-label="Add" className="grid size-9 place-items-center rounded-full text-zinc-400 hover:bg-zinc-800"><I.Plus size={18} /></button>}>
+            <AttachInput c={c} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-zinc-800"><I.Paperclip size={14} />Upload files</AttachInput>
+            <p className="px-2 py-1.5 text-xs text-zinc-500">{c.model.name} reads {c.readsLabel}. You can also paste or drop files.</p>
+          </Pop>
+          <AutoTextarea c={c} className="self-center py-1.5" placeholder="Message…" />
+          <Pop open={settings} setOpen={setSettings} className="bottom-full right-0 mb-2"
+            trigger={
+              <button onClick={() => setSettings(!settings)} className="flex shrink-0 items-center gap-1.5 self-center rounded-full bg-zinc-800 px-3 py-1.5 text-xs hover:bg-zinc-700">
+                <ProviderIcon providerId={c.model.provider} size={12} /><span className="whitespace-nowrap">{c.model.name}</span>
+                {c.reasoning && <span className="whitespace-nowrap text-zinc-400">· {c.reasoning}</span>}
+                {c.web && <I.Globe size={12} className="text-sky-400" />}
+              </button>
+            }>
+            <div className="flex flex-col sm:flex-row">
+              <ModelPickerPanel modelId={c.model.id} onSelect={c.setModelId} />
+              <div className="w-full space-y-4 border-t border-zinc-800 p-3 text-sm sm:w-48 sm:border-l sm:border-t-0">
+                <div>
+                  <div className="mb-1.5 text-xs text-zinc-500">Reasoning</div>
+                  {c.model.reasoning.length ? c.model.reasoning.map((l) => (
+                    <label key={l} className="flex cursor-pointer items-center gap-2 py-0.5"><input type="radio" checked={c.reasoning === l} onChange={() => c.setReasoning(l)} />{l}</label>
+                  )) : <p className="text-xs text-zinc-600">This Model doesn't reason.</p>}
+                </div>
+                <label className="flex cursor-pointer items-center justify-between"><span>Web search</span><input type="checkbox" checked={c.web} onChange={(e) => c.setWeb(e.target.checked)} /></label>
+                <p className="text-xs text-zinc-500">Reads {c.readsLabel}</p>
+              </div>
+            </div>
+          </Pop>
+          <SendButton c={c} className="rounded-full" />
+        </div>
+        <BlockHint c={c} />
+      </div>
+    </div>
+  );
+}
+
+// C: Docked bar. Every control visible: Model button, segmented Reasoning, Web search switch, Attachment tiles.
+function ComposerC({ c }) {
+  const [pick, setPick] = useState(false);
+  return (
+    <div className="border-t border-zinc-800 bg-zinc-900/70">
+      <div className="mx-auto max-w-5xl px-4 py-3">
+        <EditBanner c={c} />
+        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+          <Pop open={pick} setOpen={setPick} className="bottom-full left-0 mb-2"
+            trigger={<button onClick={() => setPick(!pick)} className="flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 hover:border-zinc-500"><span className="text-zinc-500">Model</span><ProviderIcon providerId={c.model.provider} size={12} />{c.model.name}<I.ChevronDown size={12} /></button>}>
+            <ModelPickerPanel modelId={c.model.id} onSelect={(id) => { c.setModelId(id); setPick(false); }} />
+          </Pop>
+          {c.model.reasoning.length > 0 ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-zinc-500">Reasoning</span>
+              <div className="flex rounded-md border border-zinc-700 bg-zinc-950 p-0.5">
+                {c.model.reasoning.map((l) => (
+                  <button key={l} onClick={() => c.setReasoning(l)} className={cx('rounded px-2 py-0.5', l === c.reasoning ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200')}>{l}</button>
+                ))}
+              </div>
+            </div>
+          ) : <span className="text-zinc-600">No reasoning</span>}
+          <button role="switch" aria-checked={c.web} onClick={() => c.setWeb(!c.web)} className="flex items-center gap-2">
+            <span className={cx('relative h-4 w-7 rounded-full transition', c.web ? 'bg-sky-500' : 'bg-zinc-700')}><span className={cx('absolute top-0.5 size-3 rounded-full bg-white transition-all', c.web ? 'left-3.5' : 'left-0.5')} /></span>
+            <span className="text-zinc-300">Web search</span>
+          </button>
+          <span className="ml-auto text-zinc-500">Reads {c.readsLabel}</span>
+        </div>
+        <div className="flex items-stretch gap-2">
+          <AutoTextarea c={c} minRows={3} className="flex-1 rounded-md border border-zinc-800 bg-zinc-950 p-3 focus:border-zinc-600" />
+          <div className="flex flex-col justify-between gap-2">
+            <AttachInput c={c} className="grid size-9 place-items-center rounded-lg border border-zinc-700 text-zinc-400 hover:bg-zinc-800"><I.Paperclip size={16} /></AttachInput>
+            <SendButton c={c} />
+          </div>
+        </div>
+        {c.attachments.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {c.attachments.map((a) => (
+              <div key={a.id} className={cx('relative w-40 overflow-hidden rounded-lg border bg-zinc-950', c.unreadable(a) ? 'border-red-500/70' : 'border-zinc-800')}>
+                {a.type === 'image' ? <Thumb a={a} className="h-16 w-full" /> : <div className="grid h-16 place-items-center bg-zinc-900 text-zinc-500">{a.type === 'pdf' ? <I.FileText size={22} /> : <I.FileCode size={22} />}</div>}
+                <div className="flex items-center gap-1 px-2 py-1 text-[11px]">
+                  <span className="min-w-0 flex-1 truncate">{a.name}</span><span className="text-zinc-500">{fmtSize(a.size)}</span>
+                  <button onClick={() => c.removeAttachment(a.id)} aria-label={`Remove ${a.name}`} className="text-zinc-500 hover:text-zinc-100"><I.X size={11} /></button>
+                </div>
+                {c.unreadable(a) && <div className="bg-red-500/15 px-2 py-0.5 text-[10px] text-red-300">{c.model.name} can't read {a.type === 'pdf' ? 'PDFs' : 'images'}</div>}
+                {a.progress < 100 && <div className="h-0.5 bg-zinc-800"><div className="h-full bg-sky-400 transition-all" style={{ width: `${a.progress}%` }} /></div>}
+              </div>
+            ))}
+          </div>
+        )}
+        <BlockHint c={c} />
+        <p className="mt-1.5 text-[11px] text-zinc-600">Enter to send · Shift+Enter for a newline · paste or drop files anywhere</p>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────── prototype chrome ───────────── */
+
+const SURFACES = [
+  { key: 'sidebar', label: 'Sidebar', names: { A: 'T3 list', B: 'Rail + ⌘K', C: 'Drawer' } },
+  { key: 'thread', label: 'Thread', names: { A: 'Bubbles', B: 'Transcript', C: 'Turn cards' } },
+  { key: 'composer', label: 'Composer', names: { A: 'Floating pills', B: 'Pill + chip', C: 'Docked bar' } },
+];
+const KEYS = ['A', 'B', 'C'];
+
+function Switcher({ v, setV, showState, setShowState }) {
+  const [focus, setFocus] = useState(0);
+  const [min, setMin] = useState(() => innerWidth < 640);
+  const cycle = (key, d) => setV(key, KEYS[(KEYS.indexOf(v[key]) + d + KEYS.length) % KEYS.length]);
+  useEffect(() => {
+    const h = (e) => {
+      const el = e.target;
+      if (e.metaKey || e.ctrlKey || e.altKey || el.closest?.('input, textarea, select, [contenteditable]')) return;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') cycle(SURFACES[focus].key, e.key === 'ArrowLeft' ? -1 : 1);
+      if (e.key === 'ArrowUp') setFocus((f) => (f + SURFACES.length - 1) % SURFACES.length);
+      if (e.key === 'ArrowDown') setFocus((f) => (f + 1) % SURFACES.length);
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  });
+  if (min) return <button onClick={() => setMin(false)} className="fixed bottom-3 left-3 z-[60] rounded-full bg-yellow-300 px-3 py-1 font-mono text-xs text-black shadow-xl ring-2 ring-black">{SURFACES.map((s) => v[s.key]).join('')}</button>;
+  return (
+    <div className="fixed bottom-3 left-3 z-[60] w-64 rounded-xl bg-yellow-300 p-1.5 font-mono text-xs text-black shadow-xl ring-2 ring-black">
+      {SURFACES.map((s, i) => (
+        <div key={s.key} onClick={() => setFocus(i)} className={cx('flex items-center gap-1 rounded-md px-1', focus === i && 'bg-yellow-400')}>
+          <span className="w-16 font-bold">{s.label}</span>
+          <button onClick={() => cycle(s.key, -1)} className="rounded px-1 hover:bg-black/10">‹</button>
+          <span className="flex-1 text-center">{v[s.key]} · {s.names[v[s.key]]}</span>
+          <button onClick={() => cycle(s.key, 1)} className="rounded px-1 hover:bg-black/10">›</button>
+        </div>
+      ))}
+      <div className="mt-1 flex items-center gap-2 border-t border-black/20 px-1 pt-1 text-[10px]">
+        <span>←→ variant · ↑↓ surface</span>
+        <button onClick={() => setShowState(!showState)} className="ml-auto underline">{showState ? 'hide' : 'state'}</button>
+        <button onClick={() => setMin(true)} className="underline">min</button>
+      </div>
+    </div>
+  );
+}
+
+function Dialog({ d, onClose }) {
+  if (!d) return null;
+  return (
+    <div className="fixed inset-0 z-[55] grid place-items-center bg-black/60 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-sm rounded-xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
+        <h2 className="font-semibold">{d.title}</h2>
+        <p className="mt-2 text-sm text-zinc-400">{d.body}</p>
+        <div className="mt-5 flex justify-end gap-2 text-sm">
+          <button onClick={onClose} className="rounded-md px-3 py-1.5 hover:bg-zinc-800">Cancel</button>
+          <button autoFocus onClick={() => { d.onOk(); onClose(); }} className={cx('rounded-md px-3 py-1.5 font-medium', d.danger ? 'bg-red-600 hover:bg-red-500' : 'bg-brand-600 hover:bg-brand-500')}>{d.ok}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────── app ───────────── */
+
+const EMPTY_DRAFT = { text: '', attachments: [] };
+
+function App() {
+  const [v, setVState] = useState(() => {
+    const p = new URLSearchParams(location.search);
+    return Object.fromEntries(SURFACES.map((s) => [s.key, KEYS.includes(p.get(s.key)) ? p.get(s.key) : 'A']));
+  });
+  const setV = (key, val) => setVState((prev) => {
+    const next = { ...prev, [key]: val };
+    history.replaceState(null, '', `?${new URLSearchParams(next)}`);
+    return next;
+  });
+  const [db, setDb] = useState(seed);
+  const [activeId, setActiveId] = useState('t1');
+  const [drafts, setDrafts] = useState({});
+  const [prefs, setPrefs] = useState({ lastModelId: 'claude-opus-5-5', lastReasoning: 'high', lastWeb: true, favorites: ['claude-opus-5-5', 'gpt-6.1-sol', 'claude-haiku-5-5'] });
+  const [editing, setEditing] = useState(null);
+  const [navOpen, setNavOpen] = useState(false);
+  const [toasts, setToasts] = useState([]);
+  const [dialog, setDialog] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const [showState, setShowState] = useState(false);
+  const [scrollTo, setScrollTo] = useState(null);
+  const [focusKey, setFocusKey] = useState(0);
+  const scrollRef = useRef(null);
+
+  useEffect(() => { const t = setInterval(() => setDb(tick), 800); return () => clearInterval(t); }, []);
+
+  const toast = (msg) => { const id = uid(); setToasts((t) => [...t, { id, msg }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200); };
+  const ask = (d) => setDialog(d);
+  const openAtt = (a) => (a.type === 'image' ? setLightbox(a) : toast(`Opens /api/attachments/${a.id} in a new tab`));
+  const toggleFavorite = (id) => setPrefs((p) => ({ ...p, favorites: p.favorites.includes(id) ? p.favorites.filter((x) => x !== id) : [...p.favorites, id] }));
+
+  const thread = db.threads.find((t) => t.id === activeId) ?? null;
+  const live = activeId && db.lives[activeId];
+  const messages = (activeId && db.messages[activeId]) || [];
+  const items = live ? [...messages, { id: 'live', role: 'assistant', live: true, ...live, status: 'streaming' }] : messages;
+
+  // Composer state
+  const draftKey = activeId ?? 'new';
+  const draft = drafts[draftKey] ?? EMPTY_DRAFT;
+  const updateDraft = (key, f) => setDrafts((d) => ({ ...d, [key]: f(d[key] ?? EMPTY_DRAFT) }));
+  const model = modelById(thread?.modelId ?? prefs.lastModelId);
+  const reasoning = resolveReasoning(model, prefs.lastReasoning);
+  const web = prefs.lastWeb;
+  const settings = { modelId: model.id, reasoningLevel: reasoning, webSearch: web };
+  const unreadable = (a) => a.type !== 'text' && !model.attach.includes(a.type);
+  const streaming = !!live;
+  const hasContent = !!(draft.text.trim() || draft.attachments.length);
+  const blockReason = draft.attachments.some(unreadable) ? `Remove the Attachments ${model.name} can't read, or switch Model.`
+    : draft.attachments.some((a) => a.progress < 100) ? 'Waiting for uploads…' : !hasContent ? 'Type a message' : null;
+  const readsLabel = ['text', ...model.attach.map((t) => (t === 'pdf' ? 'PDFs' : 'images'))].join(', ');
+
+  async function addFiles(files) {
+    const key = draftKey;
+    for (const f of files) {
+      const type = await classify(f);
+      const count = (drafts[key] ?? EMPTY_DRAFT).attachments.length;
+      if (!type) { toast(`${f.name}: not an image, PDF or text file`); continue; }
+      if (type !== 'text' && !model.attach.includes(type)) { toast(`${f.name}: ${model.name} can't read ${type === 'pdf' ? 'PDFs' : 'images'}`); continue; }
+      if (type === 'pdf' && f.size > 10 * MB) { toast(`${f.name}: PDFs are limited to 10 MB`); continue; }
+      if (type === 'text' && f.size > 256 * 1024) { toast(`${f.name}: text files are limited to 256 KB`); continue; }
+      if (count >= 10) { toast('10 Attachments per message at most'); break; }
+      addAttachment(key, { name: type === 'image' ? f.name.replace(/\.\w+$/, '.webp') : f.name, type, size: type === 'image' ? Math.min(f.size, 240_000) : f.size, url: type === 'image' ? URL.createObjectURL(f) : null });
+    }
+  }
+  function addAttachment(key, a) {
+    const att = { id: uid(), progress: 0, ...a };
+    updateDraft(key, (d) => ({ ...d, attachments: [...d.attachments, att] }));
+    const t = setInterval(() => updateDraft(key, (d) => {
+      const progress = Math.min(100, (d.attachments.find((x) => x.id === att.id)?.progress ?? 100) + 20);
+      if (progress >= 100) clearInterval(t);
+      return { ...d, attachments: d.attachments.map((x) => (x.id === att.id ? { ...x, progress } : x)) };
+    }), 180);
+  }
+  const onPaste = (e) => {
+    const files = [...e.clipboardData.files];
+    if (files.length) { e.preventDefault(); addFiles(files); return; }
+    const text = e.clipboardData.getData('text');
+    if (text.length > 5000) { e.preventDefault(); addAttachment(draftKey, { name: 'Pasted text', type: 'text', size: new Blob([text]).size }); toast('Long paste became a "Pasted text" Attachment'); }
+  };
+
+  const truncateAfter = (d, tid, msgId, inclusive) => {
+    const ms = d.messages[tid];
+    const i = ms.findIndex((m) => m.id === msgId);
+    return { ...d, messages: { ...d.messages, [tid]: ms.slice(0, inclusive ? i : i + 1) } };
+  };
+  const patchMessage = (d, tid, msgId, patch) => ({ ...d, messages: { ...d.messages, [tid]: d.messages[tid].map((m) => (m.id === msgId ? { ...m, ...patch } : m)) } });
+
+  function editResend(promptId, text, attachments, s = settings) {
+    setDb((d) => startLive(patchMessage(truncateAfter(d, activeId, promptId, false), activeId, promptId, { text, attachments }), activeId, text, s));
+  }
+
+  function send() {
+    if (!(hasContent && !blockReason && !streaming)) return;
+    const { text, attachments } = draft;
+    if (editing) {
+      editResend(editing.messageId, text, attachments);
+      setEditing(null);
+      setDrafts((d) => ({ ...d, [draftKey]: editing.saved }));
+      return;
+    }
+    const tid = activeId ?? `t${uid()}`;
+    setDb((d) => {
+      let next = d;
+      if (!activeId) {
+        const title = text.trim().slice(0, 40) || (attachments[0]?.type === 'image' ? 'Attached image(s)' : `File: ${attachments[0].name}`);
+        next = { ...next, threads: [{ id: tid, title, titlePending: true, pinned: false, lastMessageAt: Date.now(), modelId: model.id }, ...next.threads], messages: { ...next.messages, [tid]: [] } };
+      }
+      next = {
+        ...next,
+        messages: { ...next.messages, [tid]: [...next.messages[tid], { id: uid(), role: 'user', text, attachments, createdAt: Date.now() }] },
+        threads: next.threads.map((t) => (t.id === tid ? { ...t, lastMessageAt: Date.now(), modelId: model.id } : t)),
+      };
+      return startLive(next, tid, text, settings);
+    });
+    if (!activeId) {
+      setActiveId(tid);
+      // Title Model: replaces the truncated title only while it is still pending.
+      setTimeout(() => setDb((d) => ({ ...d, threads: d.threads.map((t) => (t.id === tid && t.titlePending ? { ...t, titlePending: false, title: text.trim().split(/\s+/).slice(0, 5).join(' ').replace(/[?.!]$/, '') || t.title } : t)) })), 2500);
+    }
+    setDrafts((d) => ({ ...d, [draftKey]: EMPTY_DRAFT }));
+  }
+
+  const actions = {
+    open: (id) => { setActiveId(id); setEditing(null); setNavOpen(false); },
+    openHit: (tid, mid) => { actions.open(tid); setScrollTo(mid); },
+    newThread: () => { setActiveId(null); setEditing(null); setNavOpen(false); setFocusKey((n) => n + 1); },
+    rename: (id, title) => setDb((d) => ({ ...d, threads: d.threads.map((t) => (t.id === id ? { ...t, title, titlePending: false } : t)) })),
+    togglePin: (id) => setDb((d) => ({ ...d, threads: d.threads.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)) })),
+    remove: (id) => ask({
+      title: 'Delete Thread?', body: 'Deletes the Thread with all its Messages and Attachments. This cannot be undone.', ok: 'Delete', danger: true,
+      onOk: () => {
+        setDb((d) => { const messages = { ...d.messages }, lives = { ...d.lives }; delete messages[id]; delete lives[id]; return { threads: d.threads.filter((t) => t.id !== id), messages, lives }; });
+        if (id === activeId) setActiveId(null);
+        toast('Thread deleted');
+      },
+    }),
+    regenerate: (answerId, s = settings) => setDb((d) => {
+      const next = truncateAfter(d, activeId, answerId, true);
+      return startLive(next, activeId, next.messages[activeId].at(-1).text, s);
+    }),
+    editResend,
+    startComposerEdit: (promptId) => {
+      const m = messages.find((x) => x.id === promptId);
+      setEditing({ messageId: promptId, later: messages.length - messages.indexOf(m) - 1, saved: draft });
+      updateDraft(draftKey, () => ({ text: m.text, attachments: m.attachments ?? [] }));
+      setFocusKey((n) => n + 1);
+    },
+    copy: (text) => { navigator.clipboard?.writeText(text); toast('Copied'); },
+    setDraftText: (text) => { updateDraft(draftKey, (d) => ({ ...d, text })); setFocusKey((n) => n + 1); },
+  };
+
+  const c = {
+    text: draft.text, attachments: draft.attachments, model, reasoning, web, streaming, editing, focusKey,
+    canSend: hasContent && !blockReason && !streaming, blockReason, hasContent, readsLabel, unreadable, onPaste, addFiles, send,
+    accept: ['text/*,.md,.ts,.tsx,.js,.json,.csv,.yaml,.toml,.sql,.py,.go,.rs', model.attach.includes('image') && 'image/*', model.attach.includes('pdf') && 'application/pdf'].filter(Boolean).join(','),
+    setText: (text) => updateDraft(draftKey, (d) => ({ ...d, text })),
+    removeAttachment: (id) => updateDraft(draftKey, (d) => ({ ...d, attachments: d.attachments.filter((a) => a.id !== id) })),
+    setModelId: (id) => {
+      if (thread) setDb((d) => ({ ...d, threads: d.threads.map((t) => (t.id === thread.id ? { ...t, modelId: id } : t)) }));
+      setPrefs((p) => ({ ...p, lastModelId: id }));
+    },
+    setReasoning: (l) => setPrefs((p) => ({ ...p, lastReasoning: l })),
+    setWeb: (w) => setPrefs((p) => ({ ...p, lastWeb: w })),
+    stop: () => setDb((d) => (d.lives[activeId] ? finalize(d, activeId, 'stopped') : d)),
+    cancelEdit: () => { setDrafts((d) => ({ ...d, [draftKey]: editing.saved })); setEditing(null); },
+  };
+
+  // Scroll: bottom on Thread switch, follow a Live answer when near the bottom, jump to search hits.
+  useEffect(() => { const el = scrollRef.current; if (!scrollTo) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; }); }, [activeId, v.thread]);
+  useEffect(() => { const el = scrollRef.current; if (el.scrollHeight - el.scrollTop - el.clientHeight < 240) el.scrollTop = el.scrollHeight; }, [items.length, live?.text, live?.reasoning]);
+  useEffect(() => {
+    if (!scrollTo) return;
+    const t = setTimeout(() => {
+      const el = document.getElementById(`msg-${scrollTo}`);
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el?.classList.add('flash');
+      setTimeout(() => el?.classList.remove('flash'), 1600);
+      setScrollTo(null);
+    }, 80);
+    return () => clearTimeout(t);
+  }, [scrollTo, activeId]);
+
+  const Sidebar = { A: SidebarA, B: SidebarB, C: SidebarC }[v.sidebar];
+  const Thread = { A: ThreadA, B: ThreadB, C: ThreadC }[v.thread];
+  const Composer = { A: ComposerA, B: ComposerB, C: ComposerC }[v.composer];
+  const { script, ...liveShown } = live || {};
+
+  return (
+    <Ctx.Provider value={{ toast, ask, openAtt, favorites: prefs.favorites, toggleFavorite }}>
+      <div className="flex h-dvh overflow-hidden">
+        <Sidebar db={db} activeId={activeId} actions={actions} open={navOpen} setOpen={setNavOpen} />
+        <main className="relative flex min-w-0 flex-1 flex-col"
+          onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); addFiles([...e.dataTransfer.files]); }}>
+          <div ref={scrollRef} className="flex-1 overflow-y-auto">
+            <div className={v.composer === 'A' ? 'pb-52' : 'pb-8'}>
+              <Thread key={activeId ?? 'new'} thread={thread} items={items} actions={actions} busy={streaming} composerSettings={settings}
+                onOpenNav={() => setNavOpen(true)} navAlways={v.sidebar === 'C'} />
+            </div>
+          </div>
+          <Composer c={c} />
+          {dragging && (
+            <div className="pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-2xl border-2 border-dashed border-brand-500 bg-zinc-950/80 text-center">
+              <div><I.Upload size={28} className="mx-auto mb-2 text-brand-400" /><p className="font-medium">Drop files to attach</p><p className="text-sm text-zinc-400">{model.name} reads {readsLabel}</p></div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      <div className="fixed left-1/2 top-3 z-[70] flex -translate-x-1/2 flex-col items-center gap-2">
+        {toasts.map((t) => <div key={t.id} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm shadow-xl">{t.msg}</div>)}
+      </div>
+      <Dialog d={dialog} onClose={() => setDialog(null)} />
+      {lightbox && (
+        <div className="fixed inset-0 z-[55] grid place-items-center bg-black/80 p-8" onClick={() => setLightbox(null)}>
+          <div className="text-center"><Thumb a={lightbox} className="mx-auto h-[60vh] w-[min(36rem,80vw)] rounded-xl object-contain" /><p className="mt-2 text-sm text-zinc-400">{lightbox.name} · {fmtSize(lightbox.size)}</p></div>
+        </div>
+      )}
+      <Switcher v={v} setV={setV} showState={showState} setShowState={setShowState} />
+      {showState && (
+        <pre className="fixed bottom-32 left-3 z-[60] max-h-[55vh] w-80 overflow-auto rounded-lg bg-black/90 p-3 font-mono text-[11px] text-green-300 ring-1 ring-green-900">
+          {JSON.stringify({ variants: v, activeThread: thread && { id: thread.id, title: thread.title, pinned: thread.pinned, titlePending: thread.titlePending, modelId: thread.modelId }, composer: { model: model.id, reasoning, web, text: draft.text, attachments: draft.attachments.map(({ name, type, size, progress }) => ({ name, type, size, progress, unreadable: unreadable({ type }) })), blockReason }, editing: editing && { messageId: editing.messageId, later: editing.later }, prefs, liveAnswer: live ? { ...liveShown, reasoning: `${liveShown.reasoning.length} chars`, text: `${liveShown.text.length} chars` } : null, liveAnswersByUser: Object.keys(db.lives) }, null, 2)}
+        </pre>
+      )}
+    </Ctx.Provider>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
