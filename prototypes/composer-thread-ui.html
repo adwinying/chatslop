@@ -10,6 +10,8 @@
   (or the yellow switcher: ←/→ cycle, ↑/↓ pick surface).
   Mock data, stubbed streaming (type "fail" to get an errored Answer), no persistence.
 -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..700&family=Noto+Serif+JP:wght@400..700&display=swap" />
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 <script type="importmap">
@@ -32,6 +34,8 @@
   }
 </style>
 <style>
+  /* Answers read in a serif, like Claude; Prompts and UI stay sans, code stays mono. */
+  .md { font-family: "Source Serif 4", "Noto Serif JP", serif; font-size: 1.0625rem; line-height: 1.7; }
   .md > * + * { margin-top: .75rem; }
   .md ul { list-style: disc; padding-left: 1.25rem; }
   .md ol { list-style: decimal; padding-left: 1.25rem; }
