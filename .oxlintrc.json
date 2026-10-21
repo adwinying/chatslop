@@ -1,0 +1,47 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "react", "jsx-a11y", "vitest"],
+  "jsPlugins": [
+    "@convex-dev/eslint-plugin",
+    { "name": "react-compiler", "specifier": "eslint-plugin-react-hooks" }
+  ],
+  "categories": { "correctness": "error", "suspicious": "warn" },
+  "ignorePatterns": [
+    "**/_generated/**",
+    "convex/betterAuth/generatedSchema.ts",
+    "src/routeTree.gen.ts",
+    "src/components/ui/**"
+  ],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "react-compiler/static-components": "error",
+    "react-compiler/use-memo": "error",
+    "react-compiler/preserve-manual-memoization": "error",
+    "react-compiler/immutability": "error",
+    "react-compiler/globals": "error",
+    "react-compiler/refs": "error",
+    "react-compiler/set-state-in-effect": "error",
+    "react-compiler/error-boundaries": "error",
+    "react-compiler/purity": "error",
+    "react-compiler/set-state-in-render": "error",
+    "react-compiler/unsupported-syntax": "warn",
+    "react-compiler/incompatible-library": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["convex/**/*.ts"],
+      "rules": {
+        "@convex-dev/no-old-registered-function-syntax": "error",
+        "@convex-dev/require-args-validator": "error",
+        "@convex-dev/explicit-table-ids": "error",
+        "@convex-dev/no-filter-in-query": "warn",
+        "@convex-dev/no-collect-in-query": "warn",
+        "@convex-dev/no-schema-import-cycle": "error",
+        "@convex-dev/no-duplicate-indexes": "error",
+        "@convex-dev/no-process-env": "error"
+      }
+    }
+  ]
+}
