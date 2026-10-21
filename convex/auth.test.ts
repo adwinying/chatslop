@@ -90,9 +90,9 @@ describe("users.me", () => {
     expect(me).toEqual({ name: admin.username, username: admin.username, role: "admin" });
   });
 
-  test("rejects a signed-out caller", async () => {
+  test("returns null for a signed-out caller", async () => {
     const t = setup();
 
-    await expect(t.query(api.users.me)).rejects.toThrow("Unauthenticated");
+    expect(await t.query(api.users.me)).toBeNull();
   });
 });
