@@ -35,6 +35,12 @@ export function Answer({
   const text = parts
     .flatMap((part) => (part.type === 'text' ? [part.text] : []))
     .join('\n\n')
+  // The Model can think again after some text, e.g. around a Web search.
+  const thinking =
+    streaming &&
+    parts.some(
+      (part) => part.type === 'reasoning' && part.state === 'streaming',
+    )
   const sources = [
     ...new Map(
       parts.flatMap((part) =>
@@ -51,9 +57,7 @@ export function Answer({
           className="size-4 animate-spin text-zinc-400"
         />
       )}
-      {reasoning && (
-        <Reasoning text={reasoning} thinking={streaming && !text} />
-      )}
+      {reasoning && <Reasoning text={reasoning} thinking={thinking} />}
       {text && (
         <Streamdown
           plugins={plugins}

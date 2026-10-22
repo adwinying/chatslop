@@ -15,16 +15,21 @@ export function Composer({
 }) {
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const canSend = !streaming && text.trim() !== ''
+  const [sending, setSending] = useState(false)
+  const canSend = !streaming && !sending && text.trim() !== ''
 
   const send = async () => {
     if (!canSend) return
     setError(null)
+    setSending(true)
     try {
       await onSend(text)
-      setText('')
+      // Keeps whatever the User wrote while the send was pending.
+      setText((current) => (current === text ? '' : current))
     } catch {
       setError('Could not send. Try again.')
+    } finally {
+      setSending(false)
     }
   }
 

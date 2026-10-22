@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { Composer } from '~/components/composer'
 
@@ -39,6 +39,30 @@ describe('Composer', () => {
     fireEvent.keyDown(textarea, { key: 'Enter', keyCode: 229 })
 
     expect(onSend).not.toHaveBeenCalled()
+  })
+
+  test('keeps a Draft written while Send is pending', async () => {
+    const { onSend, textarea } = renderComposer()
+    const { promise, resolve } = Promise.withResolvers<void>()
+    onSend.mockReturnValue(promise)
+
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    fireEvent.change(textarea, { target: { value: 'Next Prompt' } })
+    await act(async () => resolve())
+
+    expect(textarea).toHaveProperty('value', 'Next Prompt')
+  })
+
+  test('sends once while Send is pending', async () => {
+    const { onSend, textarea } = renderComposer()
+    const { promise, resolve } = Promise.withResolvers<void>()
+    onSend.mockReturnValue(promise)
+
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await act(async () => resolve())
+
+    expect(onSend).toHaveBeenCalledOnce()
   })
 
   test('shows Stop instead of Send while the Answer streams', () => {

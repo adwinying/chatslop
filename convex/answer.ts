@@ -85,7 +85,12 @@ export const run = internalAction({
         sendSources: true,
         onError: (cause) => (error = errorMessage(cause)),
       })
-      for await (const message of readUIMessageStream<UIMessage>({ stream })) {
+      // Without terminateOnError, a dropped stream ends as if complete.
+      const updates = readUIMessageStream<UIMessage>({
+        stream,
+        terminateOnError: true,
+      })
+      for await (const message of updates) {
         if (message.parts.some((part) => 'text' in part && part.text))
           firstTokenAt ??= Date.now()
         // Convex validates the shape when it's saved.
