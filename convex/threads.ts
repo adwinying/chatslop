@@ -5,6 +5,7 @@ import { internal } from '@/convex/_generated/api'
 import { mutation, query } from '@/convex/_generated/server'
 import { authComponent } from '@/convex/auth'
 import { STALE_MS } from '@/convex/liveAnswers'
+import { usableModel } from '@/convex/models'
 
 /** Messages per Thread that the view shows and the Context holds, newest kept. */
 export const MAX_MESSAGES = 500
@@ -52,30 +53,33 @@ export const messages = query({
 })
 
 /**
- * Inserts the Prompt and a Live answer, then starts the Answer. Without a
- * `threadId`, starts a new Thread.
+ * Inserts the Prompt and a Live answer, then starts the Answer with the
+ * picked Model. Without a `threadId`, starts a new Thread.
  */
 export const send = mutation({
-  args: { threadId: v.optional(v.id('threads')), text: v.string() },
+  args: {
+    threadId: v.optional(v.id('threads')),
+    text: v.string(),
+    modelId: v.id('models'),
+  },
   handler: async (ctx, args) => {
     const user = await authComponent.getAuthUser(ctx)
     const text = args.text.trim()
     if (!text) throw new ConvexError('Write a Prompt first')
+    const { _id: modelId } = await usableModel(
+      ctx,
+      args.modelId,
+      user.role === 'admin',
+    )
     const now = Date.now()
 
     let threadId = args.threadId
-    let modelId: Id<'models'>
     if (threadId) {
       const thread = await ownThread(ctx, threadId, user._id)
       if (await liveAnswerOf(ctx, thread._id))
         throw new ConvexError('Wait for the Answer or stop it first')
-      modelId = thread.modelId
-      await ctx.db.patch('threads', thread._id, { lastMessageAt: now })
+      await ctx.db.patch('threads', thread._id, { lastMessageAt: now, modelId })
     } else {
-      // The seed's one hardcoded Model, until Model sync lands.
-      const model = await ctx.db.query('models').first()
-      if (!model) throw new ConvexError('No Model is set up yet')
-      modelId = model._id
       threadId = await ctx.db.insert('threads', {
         userId: user._id,
         title: text.slice(0, TITLE_LENGTH),

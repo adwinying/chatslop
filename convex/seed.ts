@@ -5,7 +5,6 @@ import {
   internalMutation,
 } from '@/convex/_generated/server'
 import { createAuth } from '@/convex/auth'
-import { EFFORTS } from '@/convex/llm'
 
 /** Creates the first Admin from env vars. Does nothing once any Admin exists. */
 export const firstAdmin = internalAction({
@@ -43,8 +42,7 @@ export const firstAdmin = internalAction({
 
 /**
  * Creates the Codex and Claude Providers on first boot, blank until an Admin
- * sets each one's base URL and key in /admin, and one hardcoded Model until
- * Model sync lands.
+ * sets each one's base URL and key in /admin. Seeding runs modelSync:sync next.
  */
 export const providers = internalMutation({
   args: {},
@@ -52,7 +50,7 @@ export const providers = internalMutation({
     if (await ctx.db.query('providers').first()) return { created: false }
 
     const blank = { baseUrl: '', apiKey: '' }
-    const codex = await ctx.db.insert('providers', {
+    await ctx.db.insert('providers', {
       name: 'Codex',
       apiFormat: 'openai-responses',
       ...blank,
@@ -63,18 +61,6 @@ export const providers = internalMutation({
       apiFormat: 'anthropic-messages',
       ...blank,
       modelsDevProviderId: 'anthropic',
-    })
-    await ctx.db.insert('models', {
-      providerId: codex,
-      modelId: 'gpt-6.1-sol',
-      name: 'GPT-6.1 Sol',
-      family: 'gpt-sol',
-      releaseDate: '',
-      reasoningLevels: [...EFFORTS],
-      attachmentTypes: ['image', 'pdf'],
-      enabled: true,
-      adminOnly: false,
-      syncedAt: 0,
     })
     return { created: true }
   },

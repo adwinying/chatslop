@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "convex dev --local-backend-version precompiled-2026-10-10-72ce13c --start 'vite dev'",
-    "seed": "convex init && node --env-file-if-exists=.env.local scripts/assert-local-deployment.js && convex env set --force --from-file dev.env && convex run --push seed:firstAdmin && convex run seed:providers",
+    "seed": "convex init && node --env-file-if-exists=.env.local scripts/assert-local-deployment.js && convex env set --force --from-file dev.env && convex run --push seed:firstAdmin && convex run seed:providers && convex run modelSync:sync",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
     "lint": "oxlint --type-aware --deny-warnings && oxfmt --check",
@@ -22,6 +22,7 @@
     "@fontsource-variable/lora": "5.3.0",
     "@fontsource-variable/noto-serif-jp": "5.3.1",
     "@fontsource/biz-udpgothic": "5.3.0",
+    "@opencode-ai/models": "0.0.111",
     "@streamdown/cjk": "1.0.4",
     "@streamdown/code": "2.0.0",
     "@streamdown/math": "1.0.3",

@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ChatThreadIdRouteImport } from './routes/chat.$threadId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -17,6 +18,11 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -37,12 +43,14 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/login': typeof LoginRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/login': typeof LoginRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/login': typeof LoginRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/chat/$threadId' | '/api/auth/$'
+  fullPaths: '/' | '/admin' | '/login' | '/chat/$threadId' | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/chat/$threadId' | '/api/auth/$'
-  id: '__root__' | '/' | '/login' | '/chat/$threadId' | '/api/auth/$'
+  to: '/' | '/admin' | '/login' | '/chat/$threadId' | '/api/auth/$'
+  id: '__root__' | '/' | '/admin' | '/login' | '/chat/$threadId' | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   LoginRoute: typeof LoginRoute
   ChatThreadIdRoute: typeof ChatThreadIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -76,6 +86,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -104,6 +121,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   LoginRoute: LoginRoute,
   ChatThreadIdRoute: ChatThreadIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
