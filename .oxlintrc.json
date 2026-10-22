@@ -21,6 +21,17 @@
     "src/components/ui/**"
   ],
   "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "regex": "^\\.\\.?/",
+            "message": "Use an absolute path: ~/ for src, @/ for the repo root."
+          }
+        ]
+      }
+    ],
     "react/react-in-jsx-scope": "off",
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "warn",

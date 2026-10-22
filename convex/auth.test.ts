@@ -1,8 +1,7 @@
-/// <reference types="vite/client" />
 import { convexTest } from "convex-test"
 import { beforeEach, describe, expect, test, vi } from "vitest"
-import { api, internal } from "./_generated/api"
-import authSchema from "./betterAuth/schema"
+import { api, internal } from "@/convex/_generated/api"
+import authSchema from "@/convex/betterAuth/schema"
 
 const admin = {
   email: "admin@example.com",

@@ -1,6 +1,6 @@
 import { useQuery } from "convex/react"
 import { LogOutIcon } from "lucide-react"
-import { api } from "../../convex/_generated/api"
+import { api } from "@/convex/_generated/api"
 import { Button } from "~/components/ui/button"
 import { authClient } from "~/lib/auth-client"
 

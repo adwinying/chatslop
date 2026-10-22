@@ -1,4 +1,5 @@
-/// <reference types="vite/client" />
+import type { ConvexReactClient } from "convex/react"
+import type { ReactNode } from "react"
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react"
 import {
   createRootRouteWithContext,
@@ -8,8 +9,6 @@ import {
   Scripts,
 } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
-import type { ConvexReactClient } from "convex/react"
-import type { ReactNode } from "react"
 import { authClient } from "~/lib/auth-client"
 import { getToken } from "~/lib/auth-server"
 import appCss from "~/styles/app.css?url"
