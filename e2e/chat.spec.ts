@@ -211,6 +211,8 @@ test('a pasted image is sent, shows as a thumbnail, and only its owner can read 
 }) => {
   await logIn(page)
   const message = page.getByLabel('Message')
+  // The composer is hydrated once the Model options load.
+  await expect(page.getByRole('button', { name: /^Model: / })).toBeVisible()
 
   // Pastes a 64×48 PNG, as copying an image would.
   await message.evaluate(async (textarea) => {

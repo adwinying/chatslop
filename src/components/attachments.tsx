@@ -49,14 +49,15 @@ const formatSize = (bytes: number) =>
  * The Attachment intake shared by the composer and the Prompt editor:
  * picker, paste and drop, each file checked, processed and uploaded on
  * attach. `state` holds the uploaded Attachments; `readable` is what the
- * Model reads besides text.
+ * Model reads besides text. Until the Model loads, every kind passes: the
+ * server checks again on send, and the chips turn red once it's known.
  */
 export function useIntake(
   [attachments, setAttachments]: readonly [
     DraftAttachment[],
     Dispatch<SetStateAction<DraftAttachment[]>>,
   ],
-  readable: readonly AttachmentKind[] = [],
+  readable: readonly AttachmentKind[] = ['image', 'pdf'],
 ) {
   const generateUploadUrl = useMutation(api.attachments.generateUploadUrl)
   const register = useAction(api.attachments.add)
