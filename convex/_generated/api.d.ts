@@ -12,6 +12,7 @@ import type * as answer from "../answer.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
+import type * as listing from "../listing.js";
 import type * as liveAnswers from "../liveAnswers.js";
 import type * as llm from "../llm.js";
 import type * as modelSync from "../modelSync.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   crons: typeof crons;
   http: typeof http;
+  listing: typeof listing;
   liveAnswers: typeof liveAnswers;
   llm: typeof llm;
   modelSync: typeof modelSync;

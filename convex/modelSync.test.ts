@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { api } from '@/convex/_generated/api'
 import {
   catalog,
+  catalogModel,
   modelOf,
   setup,
   signInAdmin,
@@ -32,6 +33,7 @@ describe('modelSync.sync', () => {
     // Not image, old, audio-only, or from a Provider nobody set up.
     expect(await modelIds(t)).toEqual([
       'claude-haiku-5-5',
+      'gpt-5.5',
       'gpt-5.6',
       'gpt-6-luna',
       'gpt-6.1-sol',
@@ -59,11 +61,8 @@ describe('modelSync.sync', () => {
     await syncModels(t)
     const { as } = await signInAdmin(t)
     const sol = await modelOf(t, 'gpt-6.1-sol')
-    await as.mutation(api.models.update, {
-      modelId: sol._id,
-      enabled: false,
-      adminOnly: true,
-    })
+    await as.mutation(api.models.update, { modelId: sol._id, enabled: false })
+    await as.mutation(api.models.update, { modelId: sol._id, adminOnly: true })
 
     const { 'gpt-6-luna': _, ...rest } = catalog.openai.models
     await syncModels(t, {
@@ -72,14 +71,17 @@ describe('modelSync.sync', () => {
         ...catalog.openai,
         models: {
           ...rest,
-          'gpt-6.1-sol': { ...rest['gpt-6.1-sol'], name: 'GPT-6.1 Sol (new)' },
-          'gpt-6-astra': { ...rest['gpt-6.1-sol'], id: 'gpt-6-astra' },
+          'gpt-6.1-sol': catalogModel('gpt-6.1-sol', {
+            name: 'GPT-6.1 Sol (new)',
+          }),
+          'gpt-6-astra': catalogModel('gpt-6-astra'),
         },
       },
     })
 
     expect(await modelIds(t)).toEqual([
       'claude-haiku-5-5',
+      'gpt-5.5',
       'gpt-5.6',
       'gpt-6-astra',
       'gpt-6-luna',

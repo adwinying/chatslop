@@ -1,4 +1,4 @@
-import type { Doc } from '@/convex/_generated/dataModel'
+import type { Id } from '@/convex/_generated/dataModel'
 import type { Provider } from '@opencode-ai/models'
 import type { Infer } from 'convex/values'
 import { Models } from '@opencode-ai/models'
@@ -9,6 +9,7 @@ import {
   internalMutation,
   internalQuery,
 } from '@/convex/_generated/server'
+import { listedSince, releasedSince } from '@/convex/listing'
 import schema from '@/convex/schema'
 
 /** Enabled by a Provider's first sync; every other Model starts disabled. */
@@ -21,8 +22,6 @@ const PRESETS = [
   'claude-sonnet-5-5',
   'claude-haiku-5-5',
 ]
-
-const LISTED_MONTHS = 18
 
 const synced = schema.tables.models.validator.pick(
   'modelId',
@@ -40,17 +39,13 @@ const synced = schema.tables.models.validator.pick(
  * `gpt-image`, in our shape. Anything else never reaches the database.
  */
 export function toModels(provider: Provider | undefined, now: Date) {
-  const cutoff = new Date(now)
-  cutoff.setMonth(cutoff.getMonth() - LISTED_MONTHS)
-  const since = cutoff.toISOString().slice(0, 10)
-
+  const since = listedSince(now)
   return Object.values(provider?.models ?? {})
     .filter(
       (model) =>
         model.modalities.output.includes('text') &&
         model.family !== 'gpt-image' &&
-        // YYYY-MM or YYYY-MM-DD, so the strings compare as dates.
-        model.release_date >= since,
+        releasedSince(model.release_date, since),
     )
     .map((model): Infer<typeof synced> => {
       const options = model.reasoning_options ?? []
@@ -81,10 +76,8 @@ export function toModels(provider: Provider | undefined, now: Date) {
 export const sync = internalAction({
   args: {},
   handler: async (ctx) => {
-    const providers: Doc<'providers'>[] = await ctx.runQuery(
-      internal.modelSync.providers,
-      {},
-    )
+    const providers: { _id: Id<'providers'>; modelsDevProviderId: string }[] =
+      await ctx.runQuery(internal.modelSync.providers, {})
     const catalog = await Models.make().providers({
       signal: AbortSignal.timeout(30_000),
     })
@@ -101,7 +94,14 @@ export const sync = internalAction({
 
 export const providers = internalQuery({
   args: {},
-  handler: (ctx) => ctx.db.query('providers').take(100),
+  // Just what the sync needs, so API keys stay out of the action.
+  handler: async (ctx) => {
+    const rows = await ctx.db.query('providers').take(100)
+    return rows.map(({ _id, modelsDevProviderId }) => ({
+      _id,
+      modelsDevProviderId,
+    }))
+  },
 })
 
 /** Never deletes: a Model gone from models.dev keeps its last-known data. */

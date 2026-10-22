@@ -1,9 +1,11 @@
 /// <reference types="vite/client" />
 // Two dots, so Convex doesn't deploy this file.
+import type { Model, Provider, ProviderMap } from '@opencode-ai/models'
 import { convexTest } from 'convex-test'
 import { vi } from 'vitest'
 import { internal } from '@/convex/_generated/api'
 import authSchema from '@/convex/betterAuth/schema'
+import { listedSince } from '@/convex/listing'
 import schema from '@/convex/schema'
 
 export const admin = {
@@ -92,24 +94,32 @@ export async function signInUser(t: Test) {
 const daysAgo = (days: number) =>
   new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
 
-const catalogModel = (id: string, fields: object = {}) => ({
+export const catalogModel = (
+  id: string,
+  fields: Partial<Model> = {},
+): Model => ({
   id,
   name: id,
+  description: '',
   family: 'gpt-sol',
-  release_date: daysAgo(30),
+  attachment: true,
   reasoning: true,
   reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+  tool_call: true,
+  release_date: daysAgo(30),
+  last_updated: daysAgo(30),
   modalities: { input: ['text', 'image', 'pdf'], output: ['text'] },
+  open_weights: false,
   limit: { context: 400_000, output: 128_000 },
   ...fields,
 })
 
-const catalogProvider = (
-  id: string,
-  models: ReturnType<typeof catalogModel>[],
-) => ({
+const catalogProvider = (id: string, models: Model[]): Provider => ({
   id,
+  env: [],
+  npm: '',
   name: id,
+  doc: '',
   models: Object.fromEntries(models.map((model) => [model.id, model])),
 })
 
@@ -119,6 +129,10 @@ export const catalog = {
     catalogModel('gpt-6.1-sol', { name: 'GPT-6.1 Sol' }),
     catalogModel('gpt-6-luna', { family: 'gpt-luna' }),
     catalogModel('gpt-5.6'),
+    // Month-only, in the window's first month.
+    catalogModel('gpt-5.5', {
+      release_date: listedSince(new Date()).slice(0, 7),
+    }),
     catalogModel('gpt-image-2', { family: 'gpt-image' }),
     catalogModel('gpt-4o', { release_date: daysAgo(600) }),
     catalogModel('tts-2', {
@@ -137,10 +151,10 @@ export const catalog = {
     }),
   ]),
   google: catalogProvider('google', [catalogModel('gemini-4-pro')]),
-}
+} satisfies ProviderMap
 
 /** Seeds the Providers and syncs Models from a stubbed models.dev. */
-export async function syncModels(t: Test, providers: object = catalog) {
+export async function syncModels(t: Test, providers: ProviderMap = catalog) {
   await t.mutation(internal.seed.providers, {})
   vi.stubGlobal('fetch', async () => Response.json(providers))
   try {

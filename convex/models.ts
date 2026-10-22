@@ -4,6 +4,7 @@ import { ConvexError, v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
 import { mutation, query } from '@/convex/_generated/server'
 import { authComponent } from '@/convex/auth'
+import { releasedSince } from '@/convex/listing'
 import { titleModelId } from '@/convex/settings'
 import { requireAdmin } from '@/convex/users'
 
@@ -74,19 +75,28 @@ export const options = query({
   },
 })
 
+/**
+ * The Admin list: Models released since `since` (from `listedSince`), plus
+ * older ones still enabled or writing titles, so they stay manageable.
+ */
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { since: v.string() },
+  handler: async (ctx, { since }) => {
     await requireAdmin(ctx)
-    return await allModels(ctx)
+    const titleId = await titleModelId(ctx)
+    const models = await allModels(ctx)
+    return models.filter(
+      (m) =>
+        m.enabled || m._id === titleId || releasedSince(m.releaseDate, since),
+    )
   },
 })
 
 export const update = mutation({
   args: {
     modelId: v.id('models'),
-    enabled: v.boolean(),
-    adminOnly: v.boolean(),
+    enabled: v.optional(v.boolean()),
+    adminOnly: v.optional(v.boolean()),
   },
   handler: async (ctx, { modelId, ...fields }) => {
     await requireAdmin(ctx)

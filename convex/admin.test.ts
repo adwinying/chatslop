@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { api } from '@/convex/_generated/api'
+import { listedSince } from '@/convex/listing'
 import {
   modelOf,
   setup,
@@ -58,7 +59,7 @@ describe('providers', () => {
     )
     const publicResults = [
       providers,
-      await as.query(api.models.list, {}),
+      await as.query(api.models.list, { since: listedSince(new Date()) }),
       await as.query(api.models.options, {}),
       await as.query(api.settings.get, {}),
     ]
@@ -106,6 +107,25 @@ describe('providers', () => {
     expect(left.map((m) => m.providerId)).not.toContain(claude._id)
     expect(await providerNamed(t, 'Claude')).toBeNull()
   })
+
+  test('refuses a base URL that is not a URL, but takes a blank one', async () => {
+    const t = setup()
+    await syncModels(t)
+    const { as } = await signInAdmin(t)
+    const codex = await providerNamed(t, 'Codex')
+    const update = (baseUrl: string) =>
+      as.mutation(api.providers.update, {
+        providerId: codex._id,
+        name: 'Codex',
+        baseUrl,
+        apiKey: '',
+      })
+
+    await expect(update('cli-proxy-api:8317')).rejects.toThrow(
+      'Enter the base URL as http(s)://…',
+    )
+    await update('')
+  })
 })
 
 describe('models', () => {
@@ -124,7 +144,6 @@ describe('models', () => {
     await admin.mutation(api.models.update, {
       modelId: sol._id,
       enabled: false,
-      adminOnly: false,
     })
 
     const ids = async (as: typeof user) =>
@@ -134,13 +153,11 @@ describe('models', () => {
       'claude-haiku-5-5',
       'gpt-6-luna',
     ])
-    await expect(user.query(api.models.list, {})).rejects.toThrow('Admins only')
     await expect(
-      user.mutation(api.models.update, {
-        modelId: sol._id,
-        enabled: true,
-        adminOnly: false,
-      }),
+      user.query(api.models.list, { since: listedSince(new Date()) }),
+    ).rejects.toThrow('Admins only')
+    await expect(
+      user.mutation(api.models.update, { modelId: sol._id, enabled: true }),
     ).rejects.toThrow('Admins only')
     // Nor can a User send with them.
     await expect(
@@ -149,6 +166,32 @@ describe('models', () => {
     await expect(
       user.mutation(api.threads.send, { text: 'Hi', modelId: sol._id }),
     ).rejects.toThrow('Pick another Model')
+  })
+
+  test('the Admin list hides disabled Models past the window, except the Title Model', async () => {
+    const t = setup()
+    await syncModels(t)
+    const { as } = await signInAdmin(t)
+    const old = '2020-01-01'
+    for (const modelId of ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-5.6']) {
+      const model = await modelOf(t, modelId)
+      await t.run((ctx) =>
+        ctx.db.patch('models', model._id, { releaseDate: old }),
+      )
+    }
+    // Enabled stays, disabled goes, and luna is the Title Model.
+    const luna = await modelOf(t, 'gpt-6-luna')
+    await as.mutation(api.models.update, { modelId: luna._id, enabled: false })
+
+    const listed = await as.query(api.models.list, {
+      since: listedSince(new Date()),
+    })
+    expect(listed.map((m) => m.modelId).toSorted()).toEqual([
+      'claude-haiku-5-5',
+      'gpt-5.5',
+      'gpt-6-luna',
+      'gpt-6.1-sol',
+    ])
   })
 
   test('deletes a Model only while nothing references it', async () => {

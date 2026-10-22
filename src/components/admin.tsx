@@ -6,10 +6,14 @@ import { ConvexError } from 'convex/values'
 import { RefreshCwIcon, Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
 import { api } from '@/convex/_generated/api'
+import { listedSince } from '@/convex/listing'
 import { AppSidebar } from '~/components/app-sidebar'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+
+// The Admin list's window, as of today.
+const listArgs = () => ({ since: listedSince(new Date()) })
 
 type Provider = FunctionReturnType<typeof api.providers.list>[number]
 
@@ -159,7 +163,7 @@ function ProviderForm({ provider }: { provider: Provider }) {
 
 function TitleModel() {
   const settings = useQuery(api.settings.get)
-  const models = useQuery(api.models.list)
+  const models = useQuery(api.models.list, listArgs())
   const update = useMutation(api.settings.update)
   const { error, attempt } = useAttempt()
 
@@ -191,7 +195,7 @@ function TitleModel() {
 
 function Models() {
   const providers = useQuery(api.providers.list)
-  const models = useQuery(api.models.list)
+  const models = useQuery(api.models.list, listArgs())
   const syncNow = useMutation(api.models.syncNow)
   const { error, attempt } = useAttempt()
 
@@ -254,11 +258,12 @@ function ModelRow({ model }: { model: Doc<'models'> }) {
   // Optimistic, so the checkbox flips on click rather than after the round trip.
   const update = useMutation(api.models.update).withOptimisticUpdate(
     (store, { modelId, ...fields }) => {
-      const models = store.getQuery(api.models.list, {})
+      const args = listArgs()
+      const models = store.getQuery(api.models.list, args)
       if (models)
         store.setQuery(
           api.models.list,
-          {},
+          args,
           models.map((m) => (m._id === modelId ? { ...m, ...fields } : m)),
         )
     },
@@ -266,14 +271,7 @@ function ModelRow({ model }: { model: Doc<'models'> }) {
   const remove = useMutation(api.models.remove)
   const { error, attempt } = useAttempt()
   const save = (fields: { enabled?: boolean; adminOnly?: boolean }) =>
-    void attempt(() =>
-      update({
-        modelId: model._id,
-        enabled: model.enabled,
-        adminOnly: model.adminOnly,
-        ...fields,
-      }),
-    )
+    void attempt(() => update({ modelId: model._id, ...fields }))
 
   return (
     <tr className="border-t border-border">

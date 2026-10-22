@@ -24,16 +24,30 @@ export const update = mutation({
     baseUrl: v.string(),
     apiKey: v.string(),
   },
-  handler: async (ctx, { providerId, name, baseUrl, apiKey }) => {
+  handler: async (ctx, { providerId, ...args }) => {
     await requireAdmin(ctx)
-    if (!name.trim()) throw new ConvexError('Name the Provider')
+    const [name, baseUrl, apiKey] = [args.name, args.baseUrl, args.apiKey].map(
+      (value) => value.trim(),
+    )
+    if (!name) throw new ConvexError('Name the Provider')
+    // Blank stays allowed: the seed leaves it blank until an Admin sets it.
+    if (baseUrl && !isHttpUrl(baseUrl))
+      throw new ConvexError('Enter the base URL as http(s)://…')
     await ctx.db.patch('providers', providerId, {
-      name: name.trim(),
-      baseUrl: baseUrl.trim(),
-      ...(apiKey.trim() && { apiKey: apiKey.trim() }),
+      name,
+      baseUrl,
+      ...(apiKey && { apiKey }),
     })
   },
 })
+
+function isHttpUrl(value: string) {
+  try {
+    return ['http:', 'https:'].includes(new URL(value).protocol)
+  } catch {
+    return false
+  }
+}
 
 /** Deletes the Provider and its Models, unless any of them is in use. */
 export const remove = mutation({
