@@ -7,12 +7,15 @@ export default defineConfig({
   workers: 1,
   use: { baseURL: 'http://localhost:3000', trace: 'retain-on-failure' },
   projects: [{ name: 'chrome', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: 'pnpm seed && pnpm dev',
-    url: 'http://localhost:3000/login',
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
-    // convex dev stops its backend and vite on SIGINT; a hard kill orphans them.
-    gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
-  },
+  // CI's image job tests the container instead, already serving on :3000.
+  webServer: process.env.E2E_CONTAINER
+    ? undefined
+    : {
+        command: 'pnpm seed && pnpm dev',
+        url: 'http://localhost:3000/login',
+        reuseExistingServer: !process.env.CI,
+        timeout: 180_000,
+        // convex dev stops its backend and vite on SIGINT; a hard kill orphans them.
+        gracefulShutdown: { signal: 'SIGINT', timeout: 15_000 },
+      },
 })

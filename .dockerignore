@@ -1,0 +1,13 @@
+.git/
+.claude/
+.agents/
+.github/
+node_modules/
+.output/
+.nitro/
+.tanstack/
+.env*.local
+test-results/
+playwright-report/
+docs/
+e2e/
