@@ -18,7 +18,7 @@ const providerNamed = (t: Test, name: string) =>
     return providers.find((p) => p.name === name)!
   })
 
-// Keeps the scheduled Answer and sync from running on their own.
+// Keeps the scheduled Answer from running on its own.
 beforeEach(() => {
   vi.useFakeTimers()
 })

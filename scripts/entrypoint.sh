@@ -73,6 +73,8 @@ done
 convex deploy --typecheck disable --codegen disable
 convex run seed:firstAdmin
 convex run seed:providers
+# Offline boots still come up; the daily cron syncs later.
+convex run modelSync:sync || echo "Model sync failed; the daily cron retries" >&2
 
 node .output/server/index.mjs &
 app=$!

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { api } from '@/convex/_generated/api'
 import {
   catalog,
@@ -10,15 +10,6 @@ import {
   syncModels,
   type Test,
 } from '@/convex/test.setup'
-
-// Keeps the sync that seeding schedules from reaching the real models.dev.
-beforeEach(() => {
-  vi.useFakeTimers()
-})
-
-afterEach(() => {
-  vi.useRealTimers()
-})
 
 const modelIds = (t: Test) =>
   t.run(async (ctx) =>

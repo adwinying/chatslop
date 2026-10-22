@@ -1,4 +1,4 @@
-import { components, internal } from '@/convex/_generated/api'
+import { components } from '@/convex/_generated/api'
 import {
   env,
   internalAction,
@@ -42,8 +42,7 @@ export const firstAdmin = internalAction({
 
 /**
  * Creates the Codex and Claude Providers on first boot, blank until an Admin
- * sets each one's base URL and key in /admin, then syncs their Models in the
- * background, so an offline boot still comes up.
+ * sets each one's base URL and key in /admin. Seeding runs modelSync:sync next.
  */
 export const providers = internalMutation({
   args: {},
@@ -63,7 +62,6 @@ export const providers = internalMutation({
       ...blank,
       modelsDevProviderId: 'anthropic',
     })
-    await ctx.scheduler.runAfter(0, internal.modelSync.sync, {})
     return { created: true }
   },
 })
