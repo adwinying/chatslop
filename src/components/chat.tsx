@@ -1,12 +1,13 @@
 import type { Id } from '@/convex/_generated/dataModel'
 import type { Part } from '@/convex/parts'
+import type { FunctionReturnType } from 'convex/server'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import { Answer } from '~/components/answer'
-import { AppSidebar } from '~/components/app-sidebar'
+import { SidebarButton } from '~/components/app-sidebar'
 import {
   Composer,
   MESSAGE_ID,
@@ -14,7 +15,13 @@ import {
   WebSearchToggle,
 } from '~/components/composer'
 import { ModelPicker } from '~/components/model-picker'
+import {
+  DeleteButton,
+  PinButton,
+  TitleInput,
+} from '~/components/thread-actions'
 import { draftKey, useDraft } from '~/lib/draft'
+import { cn } from '~/lib/utils'
 
 /** The Thread view, or a new Thread without a `threadId`. */
 export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
@@ -28,89 +35,135 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const { options, model } = choices
   const me = useQuery(api.users.me)
   const draft = me ? draftKey(me.id, threadId) : undefined
+  const thread = useQuery(api.threads.get, args)
+  const deleted = !!threadId && thread === null && !!me
+
+  // Another tab deleted it.
+  useEffect(() => {
+    if (deleted) void navigate({ to: '/' })
+  }, [deleted, navigate])
 
   return (
-    <div className="flex h-dvh">
-      <AppSidebar />
-      <main className="relative flex flex-1 flex-col">
-        {/* Reversed, so the view stays pinned to the newest text as it streams. */}
-        <div className="flex flex-1 flex-col-reverse overflow-y-auto px-4 pb-40">
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-8">
-            {!threadId && me && (
-              <Greeting name={me.name} draft={draftKey(me.id)} />
-            )}
-            {messages?.map((message) =>
-              message.role === 'user' ? (
-                <Prompt key={message._id} parts={message.parts} />
-              ) : (
-                <Answer
-                  key={message._id}
-                  parts={message.parts}
-                  status={message.status}
-                  error={message.error}
-                  made={message}
+    <main className="relative flex min-w-0 flex-1 flex-col">
+      <ThreadHeader thread={thread} />
+      {/* Reversed, so the view stays pinned to the newest text as it streams. */}
+      <div className="flex flex-1 flex-col-reverse overflow-y-auto px-4 pb-40">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-8">
+          {!threadId && me && (
+            <Greeting name={me.name} draft={draftKey(me.id)} />
+          )}
+          {messages?.map((message) =>
+            message.role === 'user' ? (
+              <Prompt key={message._id} parts={message.parts} />
+            ) : (
+              <Answer
+                key={message._id}
+                parts={message.parts}
+                status={message.status}
+                error={message.error}
+                made={message}
+              />
+            ),
+          )}
+          {live && <Answer parts={live.parts} streaming />}
+        </div>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 px-2 sm:px-4">
+        <Composer
+          draftKey={draft}
+          streaming={!!live}
+          blockReason={
+            options === undefined
+              ? 'Loading Models…'
+              : model
+                ? undefined
+                : 'No Model to send with. Ask an Admin to enable one.'
+          }
+          controls={
+            options &&
+            model && (
+              <>
+                <ModelPicker
+                  options={options}
+                  model={model}
+                  onPick={(modelId) => choices.pick({ modelId })}
                 />
-              ),
-            )}
-            {live && <Answer parts={live.parts} streaming />}
-          </div>
-        </div>
-        <div className="absolute inset-x-0 bottom-0 px-2 sm:px-4">
-          <Composer
-            draftKey={draft}
-            streaming={!!live}
-            blockReason={
-              options === undefined
-                ? 'Loading Models…'
-                : model
-                  ? undefined
-                  : 'No Model to send with. Ask an Admin to enable one.'
-            }
-            controls={
-              options &&
-              model && (
-                <>
-                  <ModelPicker
-                    options={options}
-                    model={model}
-                    onPick={(modelId) => choices.pick({ modelId })}
+                {choices.reasoningLevel && (
+                  <ReasoningSelect
+                    levels={model.reasoningLevels}
+                    value={choices.reasoningLevel}
+                    onChange={(reasoningLevel) =>
+                      choices.pick({ reasoningLevel })
+                    }
                   />
-                  {choices.reasoningLevel && (
-                    <ReasoningSelect
-                      levels={model.reasoningLevels}
-                      value={choices.reasoningLevel}
-                      onChange={(reasoningLevel) =>
-                        choices.pick({ reasoningLevel })
-                      }
-                    />
-                  )}
-                  <WebSearchToggle
-                    on={choices.webSearch}
-                    onChange={(webSearch) => choices.pick({ webSearch })}
-                  />
-                </>
-              )
-            }
-            onSend={async (text) => {
-              if (!model) return
-              const id = await send({
-                threadId,
-                text,
-                modelId: model._id,
-                reasoningLevel: choices.reasoningLevel,
-                webSearch: choices.webSearch,
+                )}
+                <WebSearchToggle
+                  on={choices.webSearch}
+                  onChange={(webSearch) => choices.pick({ webSearch })}
+                />
+              </>
+            )
+          }
+          onSend={async (text) => {
+            if (!model) return
+            const id = await send({
+              threadId,
+              text,
+              modelId: model._id,
+              reasoningLevel: choices.reasoningLevel,
+              webSearch: choices.webSearch,
+            })
+            if (!threadId)
+              await navigate({
+                to: '/chat/$threadId',
+                params: { threadId: id },
               })
-              if (!threadId)
-                await navigate({
-                  to: '/chat/$threadId',
-                  params: { threadId: id },
-                })
-            }}
-            onStop={() => threadId && void stop({ threadId })}
+          }}
+          onStop={() => threadId && void stop({ threadId })}
+        />
+      </div>
+    </main>
+  )
+}
+
+/** The sidebar button on phones, then the open Thread's title (click to rename), pin and delete. */
+function ThreadHeader({
+  thread,
+}: {
+  thread?: FunctionReturnType<typeof api.threads.get>
+}) {
+  const [renaming, setRenaming] = useState(false)
+
+  return (
+    <header className="flex h-12 shrink-0 items-center gap-1 px-2">
+      <SidebarButton />
+      {thread &&
+        (renaming ? (
+          <TitleInput
+            thread={thread}
+            onDone={() => setRenaming(false)}
+            className="flex-1"
           />
-        </div>
-      </main>
-    </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              title="Rename"
+              onClick={() => setRenaming(true)}
+              className={cn(
+                'min-w-0 truncate rounded-md px-2 py-1 text-sm font-medium hover:bg-zinc-800',
+                thread.titlePending && 'animate-pulse',
+              )}
+            >
+              {thread.title}
+            </button>
+            <div className="ml-auto flex">
+              <PinButton thread={thread} />
+              <DeleteButton thread={thread} />
+            </div>
+          </>
+        ))}
+    </header>
   )
 }
 
@@ -179,10 +232,10 @@ function Greeting({ name, draft }: { name: string; draft: string }) {
 
 function Prompt({ parts }: { parts: Part[] }) {
   return (
-    <div className="flex justify-end">
+    <article aria-label="Prompt" className="flex justify-end">
       <div className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap">
         {parts.map((part) => (part.type === 'text' ? part.text : '')).join('')}
       </div>
-    </div>
+    </article>
   )
 }

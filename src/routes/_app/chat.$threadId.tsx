@@ -2,7 +2,7 @@ import type { Id } from '@/convex/_generated/dataModel'
 import { createFileRoute } from '@tanstack/react-router'
 import { Chat } from '~/components/chat'
 
-export const Route = createFileRoute('/chat/$threadId')({
+export const Route = createFileRoute('/_app/chat/$threadId')({
   component: ThreadPage,
 })
 

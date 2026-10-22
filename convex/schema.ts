@@ -129,4 +129,16 @@ export default defineSchema({
     .index('by_thread', ['threadId'])
     .index('by_user', ['userId'])
     .index('by_model', ['modelId']),
+
+  // Unsent while `messageId` is unset.
+  attachments: defineTable({
+    userId: v.string(),
+    messageId: v.optional(v.id('messages')),
+    storageId: v.id('_storage'),
+    name: v.string(),
+    mediaType: v.string(),
+    size: v.number(),
+  })
+    .index('by_message', ['messageId'])
+    .index('by_user', ['userId']),
 })

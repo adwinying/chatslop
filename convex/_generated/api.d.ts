@@ -10,6 +10,7 @@
 
 import type * as answer from "../answer.js";
 import type * as auth from "../auth.js";
+import type * as cascade from "../cascade.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as listing from "../listing.js";
@@ -23,6 +24,7 @@ import type * as reasoning from "../reasoning.js";
 import type * as seed from "../seed.js";
 import type * as settings from "../settings.js";
 import type * as threads from "../threads.js";
+import type * as titles from "../titles.js";
 import type * as userSettings from "../userSettings.js";
 import type * as users from "../users.js";
 
@@ -35,6 +37,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   answer: typeof answer;
   auth: typeof auth;
+  cascade: typeof cascade;
   crons: typeof crons;
   http: typeof http;
   listing: typeof listing;
@@ -48,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   seed: typeof seed;
   settings: typeof settings;
   threads: typeof threads;
+  titles: typeof titles;
   userSettings: typeof userSettings;
   users: typeof users;
 }>;

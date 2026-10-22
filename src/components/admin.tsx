@@ -7,7 +7,6 @@ import { RefreshCwIcon, Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
 import { api } from '@/convex/_generated/api'
 import { listedSince } from '@/convex/listing'
-import { AppSidebar } from '~/components/app-sidebar'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -24,17 +23,14 @@ export function Admin() {
   if (me?.role !== 'admin') return <Navigate to="/" />
 
   return (
-    <div className="flex h-dvh">
-      <AppSidebar />
-      <main className="flex-1 overflow-y-auto px-4 py-8">
-        <div className="mx-auto flex max-w-3xl flex-col gap-10">
-          <h1 className="text-xl font-semibold">Admin</h1>
-          <Providers />
-          <TitleModel />
-          <Models />
-        </div>
-      </main>
-    </div>
+    <main className="flex-1 overflow-y-auto px-4 py-8">
+      <div className="mx-auto flex max-w-3xl flex-col gap-10">
+        <h1 className="text-xl font-semibold">Admin</h1>
+        <Providers />
+        <TitleModel />
+        <Models />
+      </div>
+    </main>
   )
 }
 

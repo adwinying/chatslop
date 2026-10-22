@@ -9,6 +9,7 @@ import {
   Scripts,
 } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { Toaster } from 'sonner'
 import { authClient } from '~/lib/auth-client'
 import { getToken } from '~/lib/auth-server'
 import appCss from '~/styles/app.css?url'
@@ -58,6 +59,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body>
         {children}
+        <Toaster theme="dark" position="top-center" />
         <Scripts />
       </body>
     </html>

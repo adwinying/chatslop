@@ -6,7 +6,7 @@ import { mutation, query } from '@/convex/_generated/server'
 import { authComponent } from '@/convex/auth'
 import { releasedSince } from '@/convex/listing'
 import { titleModelId } from '@/convex/settings'
-import { ownThread } from '@/convex/threads'
+import { viewThread } from '@/convex/threads'
 import { requireAdmin } from '@/convex/users'
 import { settingsOf } from '@/convex/userSettings'
 
@@ -106,7 +106,7 @@ export const options = query({
   handler: async (ctx, { threadId }) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user) return null
-    const thread = threadId && (await ownThread(ctx, threadId, user._id))
+    const thread = threadId && (await viewThread(ctx, threadId, user._id))
     const settings = await settingsOf(ctx, user._id)
     const providers = await ctx.db.query('providers').take(100)
     const perProvider = await Promise.all(
