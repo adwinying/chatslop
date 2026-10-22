@@ -7,7 +7,9 @@ import { authClient } from "~/lib/auth-client";
 export function AppSidebar() {
   return (
     <aside className="hidden w-72 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
-      <div className="px-3 pt-4 pb-2 text-center font-semibold tracking-tight">chatslop</div>
+      <div className="px-3 pt-4 pb-2 text-center font-semibold tracking-tight">
+        chatslop
+      </div>
       <div className="px-3">
         <Button className="w-full" size="lg">
           New Chat

@@ -7,6 +7,10 @@ export const me = query({
   handler: async (ctx) => {
     const user = await authComponent.safeGetAuthUser(ctx);
     if (!user) return null;
-    return { name: user.name, username: user.username ?? null, role: user.role ?? "user" };
+    return {
+      name: user.name,
+      username: user.username ?? null,
+      role: user.role ?? "user",
+    };
   },
 });

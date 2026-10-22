@@ -16,7 +16,8 @@
   --color-brand-500: #0b7aa8;
   --color-brand-600: #00597f;
   /* Interface and Prompts. BIZ UDPGothic covers Japanese. */
-  --font-sans: "Inter Variable", "BIZ UDPGothic", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    "Inter Variable", "BIZ UDPGothic", ui-sans-serif, system-ui, sans-serif;
   /* Answers. Noto Serif JP covers Japanese. */
   --font-serif: "Lora Variable", "Noto Serif JP Variable", ui-serif, serif;
   --font-mono: "Hack", ui-monospace, monospace;

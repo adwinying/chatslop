@@ -9,9 +9,12 @@ import { env } from "./_generated/server";
 import authConfig from "./auth.config";
 import authSchema from "./betterAuth/schema";
 
-export const authComponent = createClient<DataModel, typeof authSchema>(components.betterAuth, {
-  local: { schema: authSchema },
-});
+export const authComponent = createClient<DataModel, typeof authSchema>(
+  components.betterAuth,
+  {
+    local: { schema: authSchema },
+  },
+);
 
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
   ({
@@ -23,4 +26,5 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
     plugins: [username(), admin(), convex({ authConfig })],
   }) satisfies BetterAuthOptions;
 
-export const createAuth = (ctx: GenericCtx<DataModel>) => betterAuth(createAuthOptions(ctx));
+export const createAuth = (ctx: GenericCtx<DataModel>) =>
+  betterAuth(createAuthOptions(ctx));

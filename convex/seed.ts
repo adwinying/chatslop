@@ -12,13 +12,25 @@ export const firstAdmin = internalAction({
     });
     if (existing) return { created: false };
 
-    const { ADMIN_EMAIL: email, ADMIN_USERNAME: username, ADMIN_PASSWORD: password } = env;
+    const {
+      ADMIN_EMAIL: email,
+      ADMIN_USERNAME: username,
+      ADMIN_PASSWORD: password,
+    } = env;
     if (!email || !username || !password) {
-      throw new Error("Set ADMIN_EMAIL, ADMIN_USERNAME and ADMIN_PASSWORD before seeding");
+      throw new Error(
+        "Set ADMIN_EMAIL, ADMIN_USERNAME and ADMIN_PASSWORD before seeding",
+      );
     }
     // No headers: Better Auth skips the Admin check for server-side calls.
     await createAuth(ctx).api.createUser({
-      body: { email, password, name: username, role: "admin", data: { username } },
+      body: {
+        email,
+        password,
+        name: username,
+        role: "admin",
+        data: { username },
+      },
     });
     return { created: true };
   },

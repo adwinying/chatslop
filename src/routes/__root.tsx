@@ -14,9 +14,13 @@ import { authClient } from "~/lib/auth-client";
 import { getToken } from "~/lib/auth-server";
 import appCss from "~/styles/app.css?url";
 
-const getAuthToken = createServerFn({ method: "GET" }).handler(() => getToken());
+const getAuthToken = createServerFn({ method: "GET" }).handler(() =>
+  getToken(),
+);
 
-export const Route = createRootRouteWithContext<{ convex: ConvexReactClient }>()({
+export const Route = createRootRouteWithContext<{
+  convex: ConvexReactClient;
+}>()({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -27,7 +31,8 @@ export const Route = createRootRouteWithContext<{ convex: ConvexReactClient }>()
   }),
   beforeLoad: async ({ location }) => {
     const token = (await getAuthToken()) ?? null;
-    if (!token && location.pathname !== "/login") throw redirect({ to: "/login" });
+    if (!token && location.pathname !== "/login")
+      throw redirect({ to: "/login" });
     return { token };
   },
   component: RootComponent,
