@@ -68,4 +68,14 @@ describe('LoginForm', () => {
     )
     expect(onSuccess).not.toHaveBeenCalled()
   })
+
+  test('requires both fields before signing in', async () => {
+    const onSuccess = logIn('  ', '')
+
+    expect(await screen.findByText('Enter your username or email')).toBeTruthy()
+    expect(screen.getByText('Enter your password')).toBeTruthy()
+    expect(authClient.signIn.username).not.toHaveBeenCalled()
+    expect(authClient.signIn.email).not.toHaveBeenCalled()
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
 })
