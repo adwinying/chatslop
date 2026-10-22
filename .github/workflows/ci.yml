@@ -7,25 +7,49 @@ on:
 
 jobs:
   check:
+    name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install mise tools
+        uses: jdx/mise-action@v5
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
 
   e2e:
+    name: E2E
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install mise tools
+        uses: jdx/mise-action@v5
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
       # The webServer runs `pnpm seed && pnpm dev` on an anonymous local Convex deployment.
-      - run: pnpm e2e
-      - if: failure()
+      - name: E2E
+        run: pnpm e2e
+
+      - name: Upload Playwright traces
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-traces
