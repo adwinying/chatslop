@@ -22,7 +22,13 @@ const IMAGE_TOKENS = 1600
 /** PDF bytes per estimated token, between text-only PDFs and scans. */
 const PDF_BYTES_PER_TOKEN = 20
 
-type Meta = { name: string; mediaType: string; size: number }
+/** `missing` when the blob is gone from storage. */
+type Meta = {
+  name: string
+  mediaType: string
+  size: number
+  missing?: boolean
+}
 
 /** What the Context needs from the Model. A limit of 0 means models.dev doesn't know it. */
 type ContextModel = {
@@ -52,13 +58,14 @@ const textTokens = (text: string) => text.length / 4
 
 /**
  * The Context as AI SDK UI messages, and how many of `messages` it leaves out.
- * Attachments the Model can't read become placeholders, then the oldest are
- * swapped for placeholders until the rest fit REQUEST_BUDGET. Then the oldest
- * Prompt+Answer pairs drop until the estimate fits 90% of what the Model's
- * window leaves after its output, so the Context starts with a Prompt. A
- * Model without known limits skips that check. `load` reads the kept
- * Attachments; a missing blob or a text file that isn't UTF-8 without NUL
- * becomes a placeholder too. Bytes go in as base64, never as URLs (#8).
+ * Missing blobs and Attachments the Model can't read become placeholders,
+ * then the oldest are swapped for placeholders until the rest fit
+ * REQUEST_BUDGET. `load` then reads the kept text files, so they count by
+ * characters; one that isn't UTF-8 without NUL becomes a placeholder too.
+ * Then the oldest Prompt+Answer pairs drop until the estimate fits 90% of
+ * what the Model's window leaves after its output, so the Context starts with
+ * a Prompt. A Model without known limits skips that check. Last, `load` reads
+ * the kept files. Bytes go in as base64, never as URLs (#8).
  * Throws when the current Prompt alone doesn't fit.
  */
 export async function contextMessages<A extends Meta>(
@@ -69,10 +76,13 @@ export async function contextMessages<A extends Meta>(
   const canRead = (a: Meta) =>
     kindOf(a.mediaType) === 'text' ||
     attachmentTypes.includes(kindOf(a.mediaType))
+  const all = messages.flatMap((m) => m.attachments)
   const omitted = new Map<A, ReturnType<typeof placeholder>>()
+  const unreadable = (a: A) => placeholder(a, ', it could not be read')
   let total = 0
-  for (const a of messages.flatMap((m) => m.attachments)) {
-    if (canRead(a)) total += encodedSize(a)
+  for (const a of all) {
+    if (a.missing) omitted.set(a, unreadable(a))
+    else if (canRead(a)) total += encodedSize(a)
     else
       omitted.set(
         a,
@@ -82,12 +92,24 @@ export async function contextMessages<A extends Meta>(
         ),
       )
   }
-  for (const a of messages.flatMap((m) => m.attachments)) {
+  for (const a of all) {
     if (total <= REQUEST_BUDGET) break
     if (omitted.has(a)) continue
     omitted.set(a, placeholder(a, ' to keep the request under 20 MB'))
     total -= encodedSize(a)
   }
+
+  const texts = new Map<A, string>()
+  await Promise.all(
+    all
+      .filter((a) => !omitted.has(a) && kindOf(a.mediaType) === 'text')
+      .map(async (a) => {
+        const bytes = await load(a)
+        const text = bytes && decodeText(bytes)
+        if (text === null) omitted.set(a, unreadable(a))
+        else texts.set(a, text)
+      }),
+  )
 
   const textParts = ({ role, parts }: ContextMessage<A>) =>
     role === 'assistant' || parts.some((p) => p.type === 'text' && p.text)
@@ -99,7 +121,7 @@ export async function contextMessages<A extends Meta>(
     const kind = kindOf(a.mediaType)
     if (kind === 'image') return IMAGE_TOKENS
     if (kind === 'pdf') return a.size / PDF_BYTES_PER_TOKEN
-    return a.size / 4
+    return textTokens(texts.get(a)!)
   }
   const tokens = messages.map(
     (m) =>
@@ -125,23 +147,20 @@ export async function contextMessages<A extends Meta>(
   const partOf = async (a: A) => {
     const skipped = omitted.get(a)
     if (skipped) return skipped
-    const bytes = await load(a)
-    const unreadable = placeholder(a, ', it could not be read')
-    if (!bytes) return unreadable
-    if (kindOf(a.mediaType) !== 'text')
+    const text = texts.get(a)
+    if (text !== undefined)
       return {
-        type: 'file',
-        mediaType: a.mediaType,
-        filename: a.name,
-        url: `data:${a.mediaType};base64,${convertDataContentToBase64String(bytes)}`,
-      } satisfies FileUIPart
-    const text = decodeText(bytes)
-    return text === null
-      ? unreadable
-      : {
-          type: 'text' as const,
-          text: `<file name="${a.name}">\n${text}\n</file>`,
-        }
+        type: 'text' as const,
+        text: `<file name="${a.name}">\n${text}\n</file>`,
+      }
+    const bytes = await load(a)
+    if (!bytes) return unreadable(a)
+    return {
+      type: 'file',
+      mediaType: a.mediaType,
+      filename: a.name,
+      url: `data:${a.mediaType};base64,${convertDataContentToBase64String(bytes)}`,
+    } satisfies FileUIPart
   }
 
   return {

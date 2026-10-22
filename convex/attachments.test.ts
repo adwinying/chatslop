@@ -80,6 +80,22 @@ describe('attachments.add', () => {
     )
     expect(await blobCount(t)).toBe(0)
   })
+
+  test('refuses a blob already registered, keeping it for its owner', async () => {
+    const { t, as, add } = await signedIn()
+    const notes = await add('notes.md', '# Notes')
+    const { storageId } = (await t.run((ctx) =>
+      ctx.db.get('attachments', notes._id),
+    ))!
+    const other = await signInUser(t)
+
+    await expect(
+      other.as.action(api.attachments.add, { storageId, name: 'stolen.md' }),
+    ).rejects.toThrow('The upload was lost. Attach it again.')
+    expect(await (await as.fetch(`/attachments/${notes._id}`)).text()).toBe(
+      '# Notes',
+    )
+  })
 })
 
 describe('threads.send with Attachments', () => {
@@ -188,6 +204,32 @@ describe('threads.send with Attachments', () => {
     expect(await blobCount(t)).toBe(2)
   })
 
+  test('marks an Attachment whose blob is gone as missing in the Context', async () => {
+    const { t, as, modelId, add } = await signedIn()
+    const kept = await add('kept.txt', 'kept')
+    const gone = await add('gone.txt', 'gone')
+    await as.mutation(api.threads.send, {
+      text: 'Hi',
+      attachmentIds: [kept._id, gone._id],
+      modelId,
+      webSearch: false,
+    })
+    const liveAnswerId = await t.run(async (ctx) => {
+      const { storageId } = (await ctx.db.get('attachments', gone._id))!
+      await ctx.storage.delete(storageId)
+      return (await ctx.db.query('liveAnswers').first())!._id
+    })
+
+    const context = await t.query(internal.liveAnswers.context, {
+      liveAnswerId,
+    })
+
+    expect(context?.messages[0]?.attachments).toMatchObject([
+      { name: 'kept.txt', missing: false },
+      { name: 'gone.txt', missing: true },
+    ])
+  })
+
   test("refuses another User's Attachment", async () => {
     const { t, as, modelId } = await signedIn()
     const theirs = await t.run(async (ctx) =>
@@ -262,6 +304,8 @@ describe('GET /attachments/:id', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8')
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff')
+    // Another User signing in on the same browser mustn't get it from the cache.
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store')
     expect(await res.text()).toBe('# Notes')
 
     expect((await other.as.fetch(`/attachments/${notes._id}`)).status).toBe(404)

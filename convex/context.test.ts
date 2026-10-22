@@ -10,7 +10,7 @@ const MB = 1024 * 1024
 /** A Prompt with Attachments, each keyed by name to bytes the loader returns. */
 const prompt = (
   text: string,
-  attachments: { name: string; mediaType: string; size: number }[],
+  attachments: ContextMessage['attachments'],
 ): ContextMessage => ({
   role: 'user',
   parts: text ? [{ type: 'text', text }] : [],
@@ -240,4 +240,49 @@ test('skips the check when the Model has no known limits', async () => {
 
   expect(messages).toHaveLength(3)
   expect(dropped).toBe(0)
+})
+
+test('counts text files by characters, not bytes', async () => {
+  // 400 characters, 1,200 bytes.
+  const kanji = '漢'.repeat(400)
+  const { dropped } = await contextMessages(
+    [
+      prompt(tokens(790), [
+        { name: 'notes.md', mediaType: 'text/plain', size: 1200 },
+      ]),
+    ],
+    model([], limits),
+    async () => bytes(kanji),
+  )
+
+  expect(dropped).toBe(0)
+})
+
+test('swaps missing blobs for placeholders before they count', async () => {
+  const loaded: string[] = []
+  const {
+    messages: [message],
+  } = await contextMessages(
+    [
+      prompt('Read', [
+        {
+          name: 'paper.pdf',
+          mediaType: 'application/pdf',
+          size: 20_000,
+          missing: true,
+        },
+      ]),
+    ],
+    model(['pdf'], limits),
+    async (attachment) => {
+      loaded.push(attachment.name)
+      return load(attachment)
+    },
+  )
+
+  expect(message!.parts[0]).toEqual({
+    type: 'text',
+    text: '[pdf: paper.pdf omitted, it could not be read]',
+  })
+  expect(loaded).toEqual([])
 })

@@ -19,6 +19,7 @@ import {
 } from '@/convex/intake'
 
 const MAX_NAME = 200
+const LOST = 'The upload was lost. Attach it again.'
 
 /** Leading bytes of the image types both Providers take, then PDF. */
 const SIGNATURES: [string, (number | null)[]][] = [
@@ -69,7 +70,7 @@ export const add = action({
     const user = await authComponent.getAuthUser(ctx)
     const name = args.name.trim().slice(0, MAX_NAME) || 'file'
     const blob = await ctx.storage.get(storageId)
-    if (!blob) throw new ConvexError('The upload was lost. Attach it again.')
+    if (!blob) throw new ConvexError(LOST)
     const bytes = new Uint8Array(await blob.arrayBuffer())
     const refuse = async (message: string) => {
       await ctx.storage.delete(storageId)
@@ -166,7 +167,15 @@ export const insert = internalMutation({
     size: v.number(),
   },
   returns: v.id('attachments'),
-  handler: async (ctx, args) => await ctx.db.insert('attachments', args),
+  handler: async (ctx, args) => {
+    // Else a User who learned another's storage ID could read and delete their blob.
+    const registered = await ctx.db
+      .query('attachments')
+      .withIndex('by_storage', (q) => q.eq('storageId', args.storageId))
+      .first()
+    if (registered) throw new ConvexError(LOST)
+    return await ctx.db.insert('attachments', args)
+  },
 })
 
 async function deleteAttachment(
@@ -247,8 +256,8 @@ export const serve = httpAction(async (ctx, request) => {
         kindOf(mediaType) === 'text' ? 'text/plain; charset=utf-8' : mediaType,
       'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(name)}`,
       'X-Content-Type-Options': 'nosniff',
-      // A blob never changes under its ID.
-      'Cache-Control': 'private, max-age=31536000, immutable',
+      // Only the session may read it, so no cache may replay it to the next one.
+      'Cache-Control': 'private, no-store',
     },
   })
 })

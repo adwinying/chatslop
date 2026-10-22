@@ -69,7 +69,18 @@ export const context = internalQuery({
             _id,
             role,
             parts,
-            attachments: role === 'user' ? await attachmentsOf(ctx, _id) : [],
+            attachments:
+              role === 'user'
+                ? await Promise.all(
+                    (await attachmentsOf(ctx, _id)).map(async (a) => ({
+                      ...a,
+                      missing: !(await ctx.db.system.get(
+                        '_storage',
+                        a.storageId,
+                      )),
+                    })),
+                  )
+                : [],
           })),
       ),
     }

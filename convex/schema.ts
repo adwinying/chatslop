@@ -142,5 +142,6 @@ export default defineSchema({
     size: v.number(),
   })
     .index('by_message', ['messageId'])
-    .index('by_user', ['userId']),
+    .index('by_user', ['userId'])
+    .index('by_storage', ['storageId']),
 })
