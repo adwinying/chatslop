@@ -1,6 +1,6 @@
 import { defineApp } from "convex/server"
 import { v } from "convex/values"
-import betterAuth from "./betterAuth/convex.config"
+import betterAuth from "@/convex/betterAuth/convex.config"
 
 const app = defineApp({
   env: {

@@ -2,6 +2,19 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "printWidth": 80,
   "semi": false,
+  "sortImports": {
+    "groups": [
+      "type",
+      "builtin",
+      "external",
+      "internal",
+      "parent",
+      "sibling",
+      "index",
+      "unknown"
+    ],
+    "newlinesBetween": false
+  },
   "ignorePatterns": [
     "pnpm-lock.yaml",
     "**/_generated/**",

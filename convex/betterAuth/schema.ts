@@ -1,5 +1,5 @@
 import { defineSchema } from "convex/server"
-import { tables } from "./generatedSchema"
+import { tables } from "@/convex/betterAuth/generatedSchema"
 
 export default defineSchema({
   ...tables,

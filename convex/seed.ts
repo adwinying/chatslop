@@ -1,6 +1,6 @@
-import { components } from "./_generated/api"
-import { env, internalAction } from "./_generated/server"
-import { createAuth } from "./auth"
+import { components } from "@/convex/_generated/api"
+import { env, internalAction } from "@/convex/_generated/server"
+import { createAuth } from "@/convex/auth"
 
 /** Creates the first Admin from env vars. Does nothing once any Admin exists. */
 export const firstAdmin = internalAction({
