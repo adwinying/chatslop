@@ -27,7 +27,9 @@ test('an Answer streams, resumes after a reload, and stops', async ({
   await page.getByLabel('Message').press('Enter')
 
   await expect(page).toHaveURL(/\/chat\/\w+$/)
-  await expect(page.getByText('Hello, mock')).toBeVisible()
+  await expect(page.getByRole('article', { name: 'Prompt' })).toHaveText(
+    'Hello, mock',
+  )
   const answer = page.getByRole('article', { name: 'Answer' })
   await expect(answer).toHaveAttribute('aria-busy', 'true')
   await expect(answer).toContainText('Mock Answer:')
@@ -79,4 +81,40 @@ test('a Model picked by keyboard persists after sending and reloading', async ({
   await expect(page.getByRole('article', { name: 'Answer' })).toContainText(
     new RegExp(`${model} [\\d.]+ · ${level}`),
   )
+})
+
+test('a new Thread gets its title, then is renamed, pinned and deleted', async ({
+  page,
+}) => {
+  await logIn(page)
+  await page.getByLabel('Message').fill('Title me')
+  await page.getByLabel('Message').press('Enter')
+  await expect(page).toHaveURL(/\/chat\/\w+$/)
+
+  const header = page.locator('header')
+  const threads = page.getByRole('navigation', { name: 'Threads' })
+  await expect(header.getByRole('button', { name: 'Mock title' })).toBeVisible()
+
+  const name = `Renamed ${Date.now()}`
+  await header.getByRole('button', { name: 'Mock title' }).click()
+  await header.getByLabel('Title').fill(name)
+  await header.getByLabel('Title').press('Enter')
+  await expect(header.getByRole('button', { name })).toBeVisible()
+  const row = threads.getByRole('listitem').filter({ hasText: name })
+  await expect(row).toBeVisible()
+
+  await row.hover()
+  await row.getByRole('button', { name: 'Pin' }).click()
+  await expect(
+    threads.getByRole('region', { name: 'Pinned' }).getByText(name),
+  ).toBeVisible()
+
+  // Mid-Answer, so the delete stops the Live answer too.
+  await header.getByRole('button', { name: 'Delete' }).click()
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: 'Delete' })
+    .click()
+  await expect(page).toHaveURL('/')
+  await expect(threads.getByText(name)).toHaveCount(0)
 })

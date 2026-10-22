@@ -41,7 +41,7 @@ test('the seeded Admin logs in, sees the shell over /convex, and logs out', asyn
   await expect(page).toHaveURL('/')
   const sidebar = page.getByRole('complementary')
   await expect(sidebar.getByText('chatslop')).toBeVisible()
-  await expect(sidebar.getByRole('button', { name: 'New Chat' })).toBeVisible()
+  await expect(sidebar.getByRole('link', { name: 'New Chat' })).toBeVisible()
   // The footer's role comes from a Convex query, so it proves the socket works.
   await expect(sidebar.getByText('Admin', { exact: true })).toBeVisible()
   expect(

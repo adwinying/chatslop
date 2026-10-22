@@ -100,7 +100,8 @@ const MOCK_INTRO = [
 
 /**
  * Streams canned reasoning, a source and a long text, slowly enough for e2e
- * to reload and stop mid-Answer. Enabled by the MOCK_MODEL env var.
+ * to reload and stop mid-Answer, and writes a canned title. Enabled by the
+ * MOCK_MODEL env var.
  */
 function mockModel() {
   const words = Array.from({ length: 200 }, (_, i) => ` word${i + 1}`)
@@ -136,21 +137,28 @@ function mockModel() {
             delta,
           })),
           { type: 'text-end', id: 't' },
-          {
-            type: 'finish',
-            finishReason: { unified: 'stop', raw: undefined },
-            usage: {
-              inputTokens: {
-                total: 10,
-                noCache: 10,
-                cacheRead: undefined,
-                cacheWrite: undefined,
-              },
-              outputTokens: { total: 200, text: 196, reasoning: 4 },
-            },
-          },
+          { type: 'finish', ...MOCK_FINISH },
         ],
       }),
     }),
+    // Titles.
+    doGenerate: async () => ({
+      content: [{ type: 'text', text: 'Mock title' }],
+      warnings: [],
+      ...MOCK_FINISH,
+    }),
   })
+}
+
+const MOCK_FINISH = {
+  finishReason: { unified: 'stop' as const, raw: undefined },
+  usage: {
+    inputTokens: {
+      total: 10,
+      noCache: 10,
+      cacheRead: undefined,
+      cacheWrite: undefined,
+    },
+    outputTokens: { total: 200, text: 196, reasoning: 4 },
+  },
 }

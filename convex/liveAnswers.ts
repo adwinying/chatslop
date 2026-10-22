@@ -12,7 +12,7 @@ import {
 import { authComponent } from '@/convex/auth'
 import { partsValidator } from '@/convex/parts'
 import { timingValidator, usageValidator } from '@/convex/schema'
-import { latestMessages, liveAnswerOf, ownThread } from '@/convex/threads'
+import { latestMessages, liveAnswerOf, viewThread } from '@/convex/threads'
 
 /** The action writes at least this often, even with nothing new to save. */
 export const HEARTBEAT_MS = 30_000
@@ -24,9 +24,23 @@ export const get = query({
   args: { threadId: v.id('threads') },
   handler: async (ctx, { threadId }) => {
     const user = await authComponent.safeGetAuthUser(ctx)
-    if (!user) return null
-    await ownThread(ctx, threadId, user._id)
+    if (!user || !(await viewThread(ctx, threadId, user._id))) return null
     return await liveAnswerOf(ctx, threadId)
+  },
+})
+
+/** The User's Threads with a Live answer, for the sidebar's spinners. Empty while signed out. */
+export const threadIds = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user) return []
+    // At most one per Thread.
+    const live = await ctx.db
+      .query('liveAnswers')
+      .withIndex('by_user', (q) => q.eq('userId', user._id))
+      .take(100)
+    return live.map((l) => l.threadId)
   },
 })
 

@@ -1,8 +1,10 @@
 import type { Id } from '@/convex/_generated/dataModel'
 import type { Part } from '@/convex/parts'
+import type { FunctionReturnType } from 'convex/server'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { useState } from 'react'
+import { MenuIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import { Answer } from '~/components/answer'
@@ -14,7 +16,14 @@ import {
   WebSearchToggle,
 } from '~/components/composer'
 import { ModelPicker } from '~/components/model-picker'
+import {
+  DeleteButton,
+  PinButton,
+  TitleInput,
+} from '~/components/thread-actions'
+import { Button } from '~/components/ui/button'
 import { draftKey, useDraft } from '~/lib/draft'
+import { cn } from '~/lib/utils'
 
 /** The Thread view, or a new Thread without a `threadId`. */
 export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
@@ -28,11 +37,20 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const { options, model } = choices
   const me = useQuery(api.users.me)
   const draft = me ? draftKey(me.id, threadId) : undefined
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const thread = useQuery(api.threads.get, args)
+  const deleted = !!threadId && thread === null && !!me
+
+  // Another tab deleted it.
+  useEffect(() => {
+    if (deleted) void navigate({ to: '/' })
+  }, [deleted, navigate])
 
   return (
     <div className="flex h-dvh">
-      <AppSidebar />
-      <main className="relative flex flex-1 flex-col">
+      <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <main className="relative flex min-w-0 flex-1 flex-col">
+        <ThreadHeader thread={thread} onMenu={() => setSidebarOpen(true)} />
         {/* Reversed, so the view stays pinned to the newest text as it streams. */}
         <div className="flex flex-1 flex-col-reverse overflow-y-auto px-4 pb-40">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-8">
@@ -114,6 +132,57 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   )
 }
 
+/** The sidebar button on phones, then the open Thread's title (click to rename), pin and delete. */
+function ThreadHeader({
+  thread,
+  onMenu,
+}: {
+  thread?: FunctionReturnType<typeof api.threads.get>
+  onMenu: () => void
+}) {
+  const [renaming, setRenaming] = useState(false)
+
+  return (
+    <header className="flex h-12 shrink-0 items-center gap-1 px-2">
+      <Button
+        variant="ghost"
+        size="icon-lg"
+        aria-label="Open sidebar"
+        className="md:hidden"
+        onClick={onMenu}
+      >
+        <MenuIcon />
+      </Button>
+      {thread &&
+        (renaming ? (
+          <TitleInput
+            thread={thread}
+            onDone={() => setRenaming(false)}
+            className="flex-1"
+          />
+        ) : (
+          <>
+            <button
+              type="button"
+              title="Rename"
+              onClick={() => setRenaming(true)}
+              className={cn(
+                'min-w-0 truncate rounded-md px-2 py-1 text-sm font-medium hover:bg-zinc-800',
+                thread.titlePending && 'animate-pulse',
+              )}
+            >
+              {thread.title}
+            </button>
+            <div className="ml-auto flex">
+              <PinButton thread={thread} />
+              <DeleteButton thread={thread} />
+            </div>
+          </>
+        ))}
+    </header>
+  )
+}
+
 /**
  * The composer's Model, Reasoning level and Web search: what the User picked
  * here, else the remembered choices. A pick that stops being usable falls
@@ -179,10 +248,10 @@ function Greeting({ name, draft }: { name: string; draft: string }) {
 
 function Prompt({ parts }: { parts: Part[] }) {
   return (
-    <div className="flex justify-end">
+    <article aria-label="Prompt" className="flex justify-end">
       <div className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap">
         {parts.map((part) => (part.type === 'text' ? part.text : '')).join('')}
       </div>
-    </div>
+    </article>
   )
 }
