@@ -13,7 +13,8 @@ function LoginPage() {
   return (
     <main className="grid min-h-dvh place-items-center px-4">
       <div className="w-full max-w-sm rounded-xl border bg-card p-6">
-        <h1 className="mb-6 text-center text-xl font-semibold tracking-tight">
+        <h1 className="mb-6 flex items-center justify-center gap-1 text-xl font-semibold tracking-tight">
+          <img src="/favicon.svg" alt="" className="size-6" />
           chatslop
         </h1>
         <LoginForm onSuccess={() => navigate({ to: '/' })} />

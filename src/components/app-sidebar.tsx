@@ -102,7 +102,8 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           open ? 'flex' : 'hidden',
         )}
       >
-        <div className="relative px-3 pt-4 pb-2 text-center font-semibold tracking-tight">
+        <div className="relative flex items-center justify-center gap-1 px-3 pt-4 pb-2 font-semibold tracking-tight">
+          <img src="/favicon.svg" alt="" className="size-5" />
           chatslop
           <Button
             ref={closeButton}
