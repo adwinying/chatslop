@@ -30,8 +30,7 @@ const fields = [
 /** Username or email + password. Uses no Convex query, so it works signed out. */
 export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
   const [error, setError] = useState<string | null>(null)
-  // Before hydration a submit would be a native GET with the password in the
-  // URL, and controlled inputs would drop typed text. So the form waits.
+  // Before hydration, controlled inputs would drop typed text. So the form waits.
   const hydrated = useHydrated()
 
   const form = useForm({
