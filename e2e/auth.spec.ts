@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
 const admin = {
   username: 'admin',
   email: 'admin@chatslop.invalid',
-  password: 'chatslop-dev-admin',
+  password: 'hogehoge',
 }
 
 test('a signed-out visit redirects to /login', async ({ page }) => {
