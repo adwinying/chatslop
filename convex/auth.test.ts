@@ -52,9 +52,10 @@ test('public signup is rejected', async () => {
 describe('users.me', () => {
   test('returns the signed-in User with their role', async () => {
     const t = setup()
-    const { as } = await signInAdmin(t)
+    const { as, userId } = await signInAdmin(t)
 
     expect(await as.query(api.users.me)).toEqual({
+      id: userId,
       name: admin.username,
       username: admin.username,
       role: 'admin',

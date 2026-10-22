@@ -6,14 +6,12 @@ import { mutation, query } from '@/convex/_generated/server'
 import { authComponent } from '@/convex/auth'
 import { STALE_MS } from '@/convex/liveAnswers'
 import { usableModel } from '@/convex/models'
+import { reasoningLevelFor } from '@/convex/reasoning'
+import { updateSettings } from '@/convex/userSettings'
 
 /** Messages per Thread that the view shows and the Context holds, newest kept. */
 export const MAX_MESSAGES = 500
 const TITLE_LENGTH = 80
-
-// Until the composer slice, every Answer uses these.
-const REASONING_LEVEL = 'medium'
-const WEB_SEARCH = true
 
 export const liveAnswerOf = (ctx: QueryCtx, threadId: Id<'threads'>) =>
   ctx.db
@@ -41,36 +39,53 @@ export async function ownThread(
   return thread
 }
 
-/** The Thread's finished Messages, oldest first. Null while signed out. */
+/** The Thread's finished Messages, oldest first, Answers with their Model's name. Null while signed out. */
 export const messages = query({
   args: { threadId: v.id('threads') },
   handler: async (ctx, { threadId }) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user) return null
     await ownThread(ctx, threadId, user._id)
-    return await latestMessages(ctx, threadId)
+    const latest = await latestMessages(ctx, threadId)
+    const names = new Map<Id<'models'>, string>()
+    for (const m of latest)
+      if (m.role === 'assistant' && !names.has(m.modelId))
+        // A referenced Model can't be deleted.
+        names.set(
+          m.modelId,
+          (await ctx.db.get('models', m.modelId))?.name ?? '',
+        )
+    return latest.map((m) =>
+      m.role === 'assistant' ? { ...m, modelName: names.get(m.modelId)! } : m,
+    )
   },
 })
 
 /**
  * Inserts the Prompt and a Live answer, then starts the Answer with the
- * picked Model. Without a `threadId`, starts a new Thread.
+ * picked choices, which the User's next Thread starts from. Without a
+ * `threadId`, starts a new Thread.
  */
 export const send = mutation({
   args: {
     threadId: v.optional(v.id('threads')),
     text: v.string(),
     modelId: v.id('models'),
+    reasoningLevel: v.optional(v.string()),
+    webSearch: v.boolean(),
   },
   handler: async (ctx, args) => {
     const user = await authComponent.getAuthUser(ctx)
     const text = args.text.trim()
     if (!text) throw new ConvexError('Write a Prompt first')
-    const { _id: modelId } = await usableModel(
-      ctx,
-      args.modelId,
-      user.role === 'admin',
+    const model = await usableModel(ctx, args.modelId, user.role === 'admin')
+    const modelId = model._id
+    // The Model may have lost the level since the composer resolved it.
+    const reasoningLevel = reasoningLevelFor(
+      model.reasoningLevels,
+      args.reasoningLevel,
     )
+    const { webSearch } = args
     const now = Date.now()
 
     let threadId = args.threadId
@@ -101,8 +116,8 @@ export const send = mutation({
       threadId,
       userId: user._id,
       modelId,
-      reasoningLevel: REASONING_LEVEL,
-      webSearch: WEB_SEARCH,
+      reasoningLevel,
+      webSearch,
       parts: [],
       stopRequested: false,
       lastWriteAt: now,
@@ -110,6 +125,12 @@ export const send = mutation({
     await ctx.scheduler.runAfter(0, internal.answer.run, { liveAnswerId })
     await ctx.scheduler.runAfter(STALE_MS, internal.liveAnswers.expire, {
       liveAnswerId,
+    })
+    await updateSettings(ctx, user._id, {
+      lastModelId: modelId,
+      lastWebSearch: webSearch,
+      // A Model without levels leaves the remembered one for the next Model.
+      ...(reasoningLevel && { lastReasoningLevel: reasoningLevel }),
     })
     return threadId
   },

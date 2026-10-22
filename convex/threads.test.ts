@@ -23,6 +23,7 @@ async function sendFirstPrompt() {
   const threadId = await as.mutation(api.threads.send, {
     text: ' Hello ',
     modelId,
+    webSearch: true,
   })
   return { t, as, userId, threadId, modelId }
 }
@@ -77,7 +78,12 @@ describe('threads.send', () => {
     const { t, as, threadId, modelId } = await sendFirstPrompt()
 
     await expect(
-      as.mutation(api.threads.send, { threadId, text: 'Again', modelId }),
+      as.mutation(api.threads.send, {
+        threadId,
+        text: 'Again',
+        modelId,
+        webSearch: true,
+      }),
     ).rejects.toThrow('Wait for the Answer or stop it first')
     expect(await messagesOf(t, threadId)).toHaveLength(1)
   })
@@ -89,7 +95,12 @@ describe('threads.send', () => {
     )
 
     await expect(
-      as.mutation(api.threads.send, { threadId, text: 'Hi', modelId }),
+      as.mutation(api.threads.send, {
+        threadId,
+        text: 'Hi',
+        modelId,
+        webSearch: true,
+      }),
     ).rejects.toThrow('Thread not found')
     await expect(as.query(api.threads.messages, { threadId })).rejects.toThrow(
       'Thread not found',
@@ -136,6 +147,7 @@ describe('liveAnswers.finish', () => {
       threadId,
       text: 'Next',
       modelId: luna._id,
+      webSearch: true,
     })
     expect(await t.run((ctx) => ctx.db.get('threads', threadId))).toMatchObject(
       { modelId: luna._id },

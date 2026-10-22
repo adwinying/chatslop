@@ -19,9 +19,11 @@ import type * as modelSync from "../modelSync.js";
 import type * as models from "../models.js";
 import type * as parts from "../parts.js";
 import type * as providers from "../providers.js";
+import type * as reasoning from "../reasoning.js";
 import type * as seed from "../seed.js";
 import type * as settings from "../settings.js";
 import type * as threads from "../threads.js";
+import type * as userSettings from "../userSettings.js";
 import type * as users from "../users.js";
 
 import type {
@@ -42,9 +44,11 @@ declare const fullApi: ApiFromModules<{
   models: typeof models;
   parts: typeof parts;
   providers: typeof providers;
+  reasoning: typeof reasoning;
   seed: typeof seed;
   settings: typeof settings;
   threads: typeof threads;
+  userSettings: typeof userSettings;
   users: typeof users;
 }>;
 

@@ -12,7 +12,20 @@ type Call = Pick<
   'model' | 'tools' | 'providerOptions'
 >
 
-export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+// Reasoning levels each API takes; a level outside them goes unsent, so the Provider default applies.
+const OPENAI_EFFORTS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const
+const ANTHROPIC_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
+const effortIn = <T extends string>(efforts: readonly T[], level?: string) =>
+  efforts.find((effort) => effort === level)
 
 /** The streamText settings for one Answer, with the flags #12 verified on CLIProxyAPI. */
 export function modelCall({
@@ -23,13 +36,11 @@ export function modelCall({
 }: {
   provider: Doc<'providers'>
   model: Doc<'models'>
-  reasoningLevel: string
+  reasoningLevel?: string
   webSearch: boolean
 }): Call {
   if (env.MOCK_MODEL) return { model: mockModel() }
   const settings = { baseURL: provider.baseUrl, apiKey: provider.apiKey }
-  // A level outside the SDK's list goes unsent, so the Provider default applies.
-  const effort = EFFORTS.find((level) => level === reasoningLevel)
 
   if (provider.apiFormat === 'openai-responses') {
     const openai = createOpenAI(settings)
@@ -39,7 +50,10 @@ export function modelCall({
       providerOptions: {
         openai: {
           store: false,
-          reasoningEffort: effort,
+          reasoningEffort: effortIn(
+            OPENAI_EFFORTS,
+            reasoningLevel === 'off' ? 'none' : reasoningLevel,
+          ),
         } satisfies OpenAIResponsesProviderOptions,
       },
       tools: webSearch ? { web_search: openai.tools.webSearch() } : undefined,
@@ -49,12 +63,14 @@ export function modelCall({
   const anthropic = createAnthropic(settings)
   return {
     model: anthropic(model.modelId),
-    // Without `display`, CLIProxyAPI streams no thinking text.
     providerOptions: {
-      anthropic: {
-        thinking: { type: 'adaptive', display: 'summarized' },
-        effort,
-      } satisfies AnthropicProviderOptions,
+      anthropic: (reasoningLevel === 'off'
+        ? { thinking: { type: 'disabled' } }
+        : {
+            // Without `display`, CLIProxyAPI streams no thinking text.
+            thinking: { type: 'adaptive', display: 'summarized' },
+            effort: effortIn(ANTHROPIC_EFFORTS, reasoningLevel),
+          }) satisfies AnthropicProviderOptions,
     },
     // _20260318 fails on CLIProxyAPI with too_many_requests.
     tools: webSearch

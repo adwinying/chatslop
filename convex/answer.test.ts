@@ -36,7 +36,11 @@ test('a stream that fails mid-Answer ends it as an error', async () => {
   await syncModels(t)
   const { as } = await signInAdmin(t)
   const { _id: modelId } = await modelOf(t, 'gpt-6.1-sol')
-  const threadId = await as.mutation(api.threads.send, { text: 'Hi', modelId })
+  const threadId = await as.mutation(api.threads.send, {
+    text: 'Hi',
+    modelId,
+    webSearch: true,
+  })
   const live = await as.query(api.liveAnswers.get, { threadId })
 
   await t.action(internal.answer.run, { liveAnswerId: live!._id })

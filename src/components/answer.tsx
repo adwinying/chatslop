@@ -1,5 +1,9 @@
 import type { Part } from '@/convex/parts'
-import type { answerStatus } from '@/convex/schema'
+import type {
+  answerStatus,
+  timingValidator,
+  usageValidator,
+} from '@/convex/schema'
 import type { Infer } from 'convex/values'
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
@@ -7,27 +11,39 @@ import { math } from '@streamdown/math'
 import {
   BrainIcon,
   ChevronDownIcon,
+  GlobeIcon,
   Loader2Icon,
   SquareIcon,
   TriangleAlertIcon,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import { cn } from '~/lib/utils'
 
 const plugins = { code, math, cjk }
 
-/** An Answer, finished or live: reasoning, markdown text, sources and its status. */
+/** What made a finished Answer. */
+type Made = {
+  modelName: string
+  reasoningLevel?: string
+  webSearch: boolean
+  usage?: Infer<typeof usageValidator>
+  timing?: Infer<typeof timingValidator>
+}
+
+/** An Answer, finished or live: reasoning, markdown text, sources, its status and what made it. */
 export function Answer({
   parts,
   streaming = false,
   status,
   error,
+  made,
 }: {
   parts: Part[]
   streaming?: boolean
   status?: Infer<typeof answerStatus>
   error?: string
+  made?: Made
 }) {
   const reasoning = parts
     .flatMap((part) => (part.type === 'reasoning' ? [part.text] : []))
@@ -101,7 +117,63 @@ export function Answer({
           {error}
         </div>
       )}
+      {made && <Label {...made} />}
     </article>
+  )
+}
+
+const count = new Intl.NumberFormat('en', { notation: 'compact' })
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
+
+/**
+ * Model · Reasoning level · Web search. Usage and timing show on hover or
+ * focus, and a tap or click toggles them for touch.
+ */
+function Label({ modelName, reasoningLevel, webSearch, usage, timing }: Made) {
+  const stats = [
+    usage?.inputTokens !== undefined && `${count.format(usage.inputTokens)} in`,
+    usage?.outputTokens !== undefined &&
+      `${count.format(usage.outputTokens)} out`,
+    usage?.reasoningTokens !== undefined &&
+      `${count.format(usage.reasoningTokens)} reasoning`,
+    timing?.firstTokenMs !== undefined &&
+      `first token ${seconds(timing.firstTokenMs)}`,
+    timing && `${seconds(timing.durationMs)} total`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  const statsId = useId()
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="group/label relative mt-2 inline-flex">
+      <button
+        type="button"
+        aria-label={[modelName, reasoningLevel, webSearch && 'Web search']
+          .filter(Boolean)
+          .join(' · ')}
+        aria-expanded={open}
+        aria-describedby={statsId}
+        onClick={() => setOpen(!open)}
+        onBlur={() => setOpen(false)}
+        className="flex items-center gap-1 rounded text-xs text-zinc-500 outline-none hover:text-zinc-300 focus-visible:ring-2 focus-visible:ring-ring/30"
+      >
+        {[modelName, reasoningLevel].filter(Boolean).join(' · ')}
+        {webSearch && <GlobeIcon aria-hidden className="size-3" />}
+      </button>
+      <span
+        id={statsId}
+        role="tooltip"
+        className={cn(
+          'absolute bottom-full left-0 mb-2 w-max rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300',
+          !open &&
+            'hidden group-hover/label:block group-has-focus-visible/label:block',
+        )}
+      >
+        {stats || 'No usage recorded'}
+      </span>
+    </div>
   )
 }
 
