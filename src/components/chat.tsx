@@ -47,12 +47,13 @@ import {
 } from '~/lib/draft'
 import { cn } from '~/lib/utils'
 
-/** Runs a regenerate or edit, then toasts how many Messages it removed. */
-const truncate = (run: () => Promise<number>) =>
-  void attempt(run).then((removed) => {
-    if (removed)
-      toast(`${removed} ${removed === 1 ? 'Message' : 'Messages'} removed`)
-  })
+/** Runs a regenerate or edit, then toasts how many Messages it removed. True once it succeeds. */
+async function truncate(run: () => Promise<number>) {
+  const removed = await attempt(run)
+  if (removed)
+    toast(`${removed} ${removed === 1 ? 'Message' : 'Messages'} removed`)
+  return removed !== undefined
+}
 
 /** The Thread view, or a new Thread without a `threadId`. */
 export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
@@ -102,9 +103,9 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
                   readable={model?.attachmentTypes}
                   busy={!!live}
                   canSend={!!model}
-                  onSend={(text, attachmentIds) =>
-                    model &&
-                    truncate(() =>
+                  onSend={async (text, attachmentIds) =>
+                    !!model &&
+                    (await truncate(() =>
                       edit({
                         promptId: message._id,
                         text,
@@ -113,7 +114,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
                         reasoningLevel: choices.reasoningLevel,
                         webSearch: choices.webSearch,
                       }),
-                    )
+                    ))
                   }
                 />
               ) : (
@@ -133,7 +134,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
                       }
                       disabled={!!live}
                       onRegenerate={(modelId) =>
-                        truncate(() =>
+                        void truncate(() =>
                           regenerate({ answerId: message._id, modelId }),
                         )
                       }
@@ -378,7 +379,8 @@ function Prompt({
   /** While the Thread has a Live answer. */
   busy: boolean
   canSend: boolean
-  onSend: (text: string, attachmentIds: Id<'attachments'>[]) => void
+  /** Resolves true once the edit succeeds. */
+  onSend: (text: string, attachmentIds: Id<'attachments'>[]) => Promise<boolean>
 }) {
   const [editing, setEditing] = useState(false)
 
@@ -390,9 +392,9 @@ function Prompt({
           attachments={attachments}
           readable={readable}
           disabled={busy || !canSend}
-          onSend={(edited, attachmentIds) => {
-            setEditing(false)
-            onSend(edited, attachmentIds)
+          // Stays open on refusal, keeping the edited text and Attachments.
+          onSend={async (edited, attachmentIds) => {
+            if (await onSend(edited, attachmentIds)) setEditing(false)
           }}
           onCancel={() => setEditing(false)}
         />

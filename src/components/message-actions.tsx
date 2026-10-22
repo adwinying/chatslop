@@ -28,7 +28,13 @@ const shown = (always: boolean) =>
       'opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-aria-expanded:opacity-100',
   )
 
-export function CopyButton({ text }: { text: string }) {
+export function CopyButton({
+  text,
+  disabled,
+}: {
+  text: string
+  disabled: boolean
+}) {
   const [copied, setCopied] = useState(false)
 
   return (
@@ -36,6 +42,7 @@ export function CopyButton({ text }: { text: string }) {
       variant="ghost"
       size="icon-sm"
       aria-label={copied ? 'Copied' : 'Copy'}
+      disabled={disabled}
       onClick={async () => {
         await navigator.clipboard.writeText(text)
         setCopied(true)
@@ -66,7 +73,7 @@ export function AnswerActions({
 }) {
   return (
     <div className={shown(always)}>
-      <CopyButton text={text} />
+      <CopyButton text={text} disabled={disabled} />
       <Button
         variant="ghost"
         size="icon-sm"
@@ -119,7 +126,7 @@ export function PromptActions({
       >
         <PencilIcon />
       </Button>
-      <CopyButton text={text} />
+      <CopyButton text={text} disabled={disabled} />
     </div>
   )
 }
