@@ -1,5 +1,9 @@
+import type { api } from '@/convex/_generated/api'
+import type { FunctionReturnType } from 'convex/server'
 import type { SetStateAction } from 'react'
 import { useSyncExternalStore } from 'react'
+
+export type DraftAttachment = FunctionReturnType<typeof api.attachments.add>
 
 const listeners = new Set<() => void>()
 
@@ -36,4 +40,21 @@ export function useDraft(key: string | undefined) {
     for (const listener of listeners) listener()
   }
   return [text, setText] as const
+}
+
+const parse = (json: string): DraftAttachment[] =>
+  json ? JSON.parse(json) : []
+
+/** The Draft's uploaded Attachments under `key`, kept like its text. */
+export function useDraftAttachments(key: string | undefined) {
+  const [json, setJson] = useDraft(key && `${key}:attachments`)
+  const attachments = parse(json)
+
+  const setAttachments = (action: SetStateAction<DraftAttachment[]>) =>
+    setJson((current) => {
+      const next =
+        typeof action === 'function' ? action(parse(current)) : action
+      return next.length ? JSON.stringify(next) : ''
+    })
+  return [attachments, setAttachments] as const
 }

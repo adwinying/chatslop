@@ -1,5 +1,7 @@
 import type { Id } from '@/convex/_generated/dataModel'
+import type { AttachmentKind } from '@/convex/intake'
 import type { Options } from '~/components/model-picker'
+import type { DraftAttachment } from '~/lib/draft'
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -8,6 +10,11 @@ import {
   RefreshCwIcon,
 } from 'lucide-react'
 import { useState } from 'react'
+import {
+  AttachButton,
+  DraftAttachments,
+  useIntake,
+} from '~/components/attachments'
 import { isSendKey } from '~/components/composer'
 import { ModelMenu } from '~/components/model-picker'
 import { Button } from '~/components/ui/button'
@@ -117,30 +124,47 @@ export function PromptActions({
   )
 }
 
-/** The Prompt bubble as an editor. Enter or Send resends; Escape cancels. */
+/**
+ * The Prompt bubble as an editor, with the composer's Attachment intake.
+ * Enter or Send resends; Escape cancels.
+ */
 export function PromptEditor({
   text: initial,
+  attachments,
+  readable,
   disabled,
   onSend,
   onCancel,
 }: {
   text: string
+  attachments: DraftAttachment[]
+  /** What the Model reads besides text. */
+  readable?: AttachmentKind[]
   /** Why Send can't go yet, e.g. a Live answer or no Model. */
   disabled: boolean
-  onSend: (text: string) => void
+  onSend: (text: string, attachmentIds: Id<'attachments'>[]) => void
   onCancel: () => void
 }) {
   const [text, setText] = useState(initial)
-  const canSend = !disabled && text.trim() !== ''
+  const intake = useIntake(useState(attachments), readable)
+  const canSend =
+    !disabled &&
+    !intake.blockReason &&
+    (text.trim() !== '' || intake.attachments.length > 0)
 
   return (
     <form
       className="w-full max-w-[85%] rounded-2xl bg-zinc-800 p-2"
       onSubmit={(event) => {
         event.preventDefault()
-        if (canSend) onSend(text)
+        if (canSend)
+          onSend(
+            text,
+            intake.attachments.map((a) => a._id),
+          )
       }}
     >
+      <DraftAttachments intake={intake} />
       <textarea
         aria-label="Edit Prompt"
         // oxlint-disable-next-line jsx-a11y/no-autofocus -- it opens on the User's request.
@@ -148,6 +172,7 @@ export function PromptEditor({
         rows={3}
         value={text}
         onChange={(event) => setText(event.target.value)}
+        onPaste={intake.paste}
         onKeyDown={(event) => {
           if (event.key === 'Escape') onCancel()
           if (!isSendKey(event)) return
@@ -156,8 +181,18 @@ export function PromptEditor({
         }}
         className="w-full resize-none bg-transparent px-2 py-1 outline-none"
       />
-      <div className="flex justify-end gap-1.5">
-        <Button type="button" variant="ghost" size="lg" onClick={onCancel}>
+      {intake.blockReason && (
+        <p className="px-2 pb-1 text-xs text-red-300">{intake.blockReason}</p>
+      )}
+      <div className="flex gap-1.5">
+        <AttachButton intake={intake} />
+        <Button
+          type="button"
+          variant="ghost"
+          size="lg"
+          className="ml-auto"
+          onClick={onCancel}
+        >
           Cancel
         </Button>
         <Button type="submit" size="lg" disabled={!canSend}>

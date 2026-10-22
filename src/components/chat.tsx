@@ -1,14 +1,20 @@
 import type { Id } from '@/convex/_generated/dataModel'
+import type { AttachmentKind } from '@/convex/intake'
 import type { Part } from '@/convex/parts'
 import type { FunctionReturnType } from 'convex/server'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { useEffect, useState } from 'react'
+import { type DragEvent, type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import { Answer } from '~/components/answer'
 import { SidebarButton } from '~/components/app-sidebar'
+import {
+  type Intake,
+  PromptAttachments,
+  useIntake,
+} from '~/components/attachments'
 import {
   Composer,
   MESSAGE_ID,
@@ -27,7 +33,12 @@ import {
   PinButton,
   TitleInput,
 } from '~/components/thread-actions'
-import { draftKey, useDraft } from '~/lib/draft'
+import {
+  type DraftAttachment,
+  draftKey,
+  useDraft,
+  useDraftAttachments,
+} from '~/lib/draft'
 import { cn } from '~/lib/utils'
 
 /** Runs a regenerate or edit, then toasts how many Messages it removed. */
@@ -54,6 +65,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const regenerate = useMutation(api.threads.regenerate)
   const edit = useMutation(api.threads.edit)
   const lastAnswerId = messages?.findLast((m) => m.role === 'assistant')?._id
+  const intake = useIntake(useDraftAttachments(draft), model?.attachmentTypes)
 
   // Another tab deleted it.
   useEffect(() => {
@@ -61,7 +73,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   }, [deleted, navigate])
 
   return (
-    <main className="relative flex min-w-0 flex-1 flex-col">
+    <DropZone intake={intake}>
       <ThreadHeader thread={thread} />
       {/* Reversed, so the view stays pinned to the newest text as it streams. */}
       <div className="flex flex-1 flex-col-reverse overflow-y-auto px-4 pb-40">
@@ -74,14 +86,17 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
               <Prompt
                 key={message._id}
                 text={textOf(message.parts)}
+                attachments={message.attachments}
+                readable={model?.attachmentTypes}
                 busy={!!live}
                 canSend={!!model}
-                onSend={(text) =>
+                onSend={(text, attachmentIds) =>
                   model &&
                   truncate(() =>
                     edit({
                       promptId: message._id,
                       text,
+                      attachmentIds,
                       modelId: model._id,
                       reasoningLevel: choices.reasoningLevel,
                       webSearch: choices.webSearch,
@@ -154,15 +169,21 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
               </>
             )
           }
+          intake={intake}
           onSend={async (text) => {
             if (!model) return
+            const attachmentIds = intake.attachments.map((a) => a._id)
             const id = await send({
               threadId,
               text,
+              attachmentIds,
               modelId: model._id,
               reasoningLevel: choices.reasoningLevel,
               webSearch: choices.webSearch,
             })
+            intake.setAttachments((list) =>
+              list.filter((a) => !attachmentIds.includes(a._id)),
+            )
             if (!threadId)
               await navigate({
                 to: '/chat/$threadId',
@@ -172,6 +193,52 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
           onStop={() => threadId && void stop({ threadId })}
         />
       </div>
+    </DropZone>
+  )
+}
+
+const hasFiles = (event: DragEvent) =>
+  event.dataTransfer.types.includes('Files')
+
+/** The Thread view, which attaches files dropped anywhere on it. */
+function DropZone({
+  intake,
+  children,
+}: {
+  intake: Intake
+  children: ReactNode
+}) {
+  const [dragging, setDragging] = useState(false)
+
+  return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- dropping is a pointer shortcut; Attach and paste serve keyboards.
+    <main
+      className="relative flex min-w-0 flex-1 flex-col"
+      onDragOver={(event) => {
+        if (!hasFiles(event)) return
+        event.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={(event) => {
+        if (
+          !(event.relatedTarget instanceof Node) ||
+          !event.currentTarget.contains(event.relatedTarget)
+        )
+          setDragging(false)
+      }}
+      onDrop={(event) => {
+        if (!hasFiles(event)) return
+        event.preventDefault()
+        setDragging(false)
+        intake.add([...event.dataTransfer.files])
+      }}
+    >
+      {children}
+      {dragging && (
+        <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-sky-500/60 bg-zinc-950/80 text-sm text-zinc-200">
+          Drop files to attach
+        </div>
+      )}
     </main>
   )
 }
@@ -283,18 +350,22 @@ function Greeting({ name, draft }: { name: string; draft: string }) {
 const textOf = (parts: Part[]) =>
   parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('')
 
-/** A Prompt bubble with Edit and Copy, which becomes an editor in place. */
+/** A Prompt bubble under its Attachments, with Edit and Copy, which becomes an editor in place. */
 function Prompt({
   text,
+  attachments,
+  readable,
   busy,
   canSend,
   onSend,
 }: {
   text: string
+  attachments: DraftAttachment[]
+  readable?: AttachmentKind[]
   /** While the Thread has a Live answer. */
   busy: boolean
   canSend: boolean
-  onSend: (text: string) => void
+  onSend: (text: string, attachmentIds: Id<'attachments'>[]) => void
 }) {
   const [editing, setEditing] = useState(false)
 
@@ -303,18 +374,23 @@ function Prompt({
       {editing ? (
         <PromptEditor
           text={text}
+          attachments={attachments}
+          readable={readable}
           disabled={busy || !canSend}
-          onSend={(edited) => {
+          onSend={(edited, attachmentIds) => {
             setEditing(false)
-            onSend(edited)
+            onSend(edited, attachmentIds)
           }}
           onCancel={() => setEditing(false)}
         />
       ) : (
         <>
-          <div className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap">
-            {text}
-          </div>
+          <PromptAttachments attachments={attachments} />
+          {text && (
+            <div className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap">
+              {text}
+            </div>
+          )}
           <PromptActions
             text={text}
             disabled={busy}

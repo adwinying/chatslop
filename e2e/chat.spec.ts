@@ -204,3 +204,80 @@ test('editing a Prompt mid-Thread resends it and drops what followed', async ({
   await page.getByRole('button', { name: 'Stop' }).click()
   await expect(answer.getByText('Stopped')).toBeVisible()
 })
+
+test('a pasted image is sent, shows as a thumbnail, and only its owner can read it', async ({
+  page,
+  playwright,
+}) => {
+  await logIn(page)
+  const message = page.getByLabel('Message')
+
+  // Pastes a 64×48 PNG, as copying an image would.
+  await message.evaluate(async (textarea) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 48
+    canvas.getContext('2d')!.fillRect(0, 0, 64, 48)
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/png'),
+    )
+    const data = new DataTransfer()
+    data.items.add(new File([blob!], 'square.png', { type: 'image/png' }))
+    textarea.dispatchEvent(
+      new ClipboardEvent('paste', {
+        clipboardData: data,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+  })
+  // Re-encoded to WebP in the browser.
+  await expect(
+    page.getByRole('button', { name: 'Remove square.webp' }),
+  ).toBeVisible()
+  await message.fill('What is this?')
+  await message.press('Enter')
+  await expect(page).toHaveURL(/\/chat\/\w+$/)
+  await page.getByRole('button', { name: 'Stop' }).click()
+
+  const prompt = page.getByRole('article', { name: 'Prompt' })
+  const thumbnail = prompt.getByRole('img', { name: 'square.webp' })
+  await expect(thumbnail).toBeVisible()
+  await expect
+    .poll(() => thumbnail.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBe(64)
+  await prompt.getByRole('button', { name: 'Open square.webp' }).click()
+  await expect(page.getByRole('dialog', { name: 'square.webp' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  const url = (await thumbnail.getAttribute('src'))!
+  expect(url).toMatch(/^\/api\/attachments\/\w+$/)
+  const own = await page.request.get(url)
+  expect(own.status()).toBe(200)
+  expect(own.headers()['content-type']).toBe('image/webp')
+
+  // Another User, created by the Admin; earlier runs may have made them already.
+  const other = { username: 'e2e-other', password: 'e2e-other-password' }
+  const origin = { Origin: 'http://localhost:3000' }
+  await page.request.post('/api/auth/admin/create-user', {
+    headers: origin,
+    data: {
+      email: 'e2e-other@chatslop.invalid',
+      password: other.password,
+      name: other.username,
+      role: 'user',
+      data: { username: other.username },
+    },
+  })
+  const context = await playwright.request.newContext({
+    baseURL: 'http://localhost:3000',
+  })
+  expect((await context.get(url)).status()).toBe(401)
+  const signIn = await context.post('/api/auth/sign-in/username', {
+    headers: origin,
+    data: other,
+  })
+  expect(signIn.ok()).toBe(true)
+  expect((await context.get(url)).status()).toBe(404)
+  await context.dispose()
+})

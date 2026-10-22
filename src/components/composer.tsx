@@ -1,6 +1,12 @@
 import type { KeyboardEvent, ReactNode } from 'react'
+import { ConvexError } from 'convex/values'
 import { ArrowUpIcon, BrainIcon, GlobeIcon, SquareIcon } from 'lucide-react'
 import { useState } from 'react'
+import {
+  AttachButton,
+  DraftAttachments,
+  type Intake,
+} from '~/components/attachments'
 import { Button } from '~/components/ui/button'
 import { useDraft } from '~/lib/draft'
 import { cn } from '~/lib/utils'
@@ -19,32 +25,36 @@ const pill =
   'flex items-center gap-1.5 rounded-full border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-800 has-focus-visible:ring-2 has-focus-visible:ring-ring/30'
 
 /**
- * The floating composer: the Thread's Draft with pill controls, and Send,
- * which becomes Stop while the Answer streams.
+ * The floating composer: the Thread's Draft with its Attachments, pill
+ * controls, and Send, which becomes Stop while the Answer streams.
  */
 export function Composer({
   draftKey,
   streaming,
   blockReason,
   controls,
+  intake,
   onSend,
   onStop,
 }: {
   /** From `draftKey()`; the text area waits for it. */
   draftKey: string | undefined
   streaming: boolean
-  /** Why Send is blocked, e.g. no Model to send with. Shown once there's text. */
+  /** Why Send is blocked, e.g. no Model to send with. Shown once there's text or a file. */
   blockReason?: string
   /** Pills shown left of Send. */
   controls?: ReactNode
+  /** The Draft's Attachments; `onSend` reads them from here too. */
+  intake?: Intake
   onSend: (text: string) => Promise<unknown>
   onStop: () => void
 }) {
   const [text, setText] = useDraft(draftKey)
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
-  const hasText = text.trim() !== ''
-  const canSend = !blockReason && !streaming && !sending && hasText
+  const hasContent = text.trim() !== '' || !!intake?.attachments.length
+  const reason = blockReason ?? intake?.blockReason
+  const canSend = !reason && !streaming && !sending && hasContent
 
   const send = async () => {
     if (!canSend) return
@@ -54,8 +64,13 @@ export function Composer({
       await onSend(text)
       // Keeps whatever the User wrote while the send was pending.
       setText((current) => (current === text ? '' : current))
-    } catch {
-      setError('Could not send. Try again.')
+    } catch (cause) {
+      // E.g. an Attachment the cron deleted from an old Draft.
+      setError(
+        cause instanceof ConvexError && typeof cause.data === 'string'
+          ? cause.data
+          : 'Could not send. Try again.',
+      )
     } finally {
       setSending(false)
     }
@@ -75,6 +90,7 @@ export function Composer({
         void send()
       }}
     >
+      {intake && <DraftAttachments intake={intake} />}
       <textarea
         id={MESSAGE_ID}
         aria-label="Message"
@@ -84,13 +100,15 @@ export function Composer({
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={intake?.paste}
         className="w-full resize-none bg-transparent px-2 py-2 outline-none placeholder:text-muted-foreground"
       />
-      {blockReason && hasText && !streaming && (
-        <p className="px-2 pb-1 text-xs text-red-300">{blockReason}</p>
+      {reason && hasContent && !streaming && (
+        <p className="px-2 pb-1 text-xs text-red-300">{reason}</p>
       )}
       <div className="flex flex-wrap items-center gap-1.5 px-1">
         {controls}
+        {intake && <AttachButton intake={intake} />}
         {error && (
           <p role="alert" className="text-xs text-destructive">
             {error}
