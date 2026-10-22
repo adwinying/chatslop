@@ -11,7 +11,7 @@ import {
 } from '@/convex/_generated/server'
 import schema from '@/convex/schema'
 
-/** Enabled by the first sync; every other Model starts disabled. */
+/** Enabled by a Provider's first sync; every other Model starts disabled. */
 const PRESETS = [
   'gpt-6.1-sol',
   'gpt-6-astra',
@@ -112,12 +112,15 @@ export const upsert = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const first = !(await ctx.db.query('models').first())
     const syncedAt = Date.now()
 
     for (const { providerId, models } of args.providers) {
       // Deleted while the action fetched.
       if (!(await ctx.db.get('providers', providerId))) continue
+      const first = !(await ctx.db
+        .query('models')
+        .withIndex('by_provider_modelId', (q) => q.eq('providerId', providerId))
+        .first())
       for (const model of models) {
         const existing = await ctx.db
           .query('models')

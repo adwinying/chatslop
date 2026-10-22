@@ -1,4 +1,4 @@
-import type { Id } from '@/convex/_generated/dataModel'
+import type { Doc, Id } from '@/convex/_generated/dataModel'
 import type { QueryCtx } from '@/convex/_generated/server'
 import { ConvexError, v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
@@ -39,14 +39,18 @@ export async function inUse(ctx: QueryCtx, modelId: Id<'models'>) {
   return !!message || !!live || (await titleModelId(ctx)) === modelId
 }
 
-/** The Model, if this User may send with it: enabled, and Admin-only only for Admins. */
+/** Enabled, and Admin-only only for Admins. */
+const canUse = (model: Doc<'models'>, isAdmin: boolean) =>
+  model.enabled && (!model.adminOnly || isAdmin)
+
+/** The Model, if this User may send with it. */
 export async function usableModel(
   ctx: QueryCtx,
   modelId: Id<'models'>,
-  role: string | null | undefined,
+  isAdmin: boolean,
 ) {
   const model = await ctx.db.get('models', modelId)
-  if (!model?.enabled || (model.adminOnly && role !== 'admin'))
+  if (!model || !canUse(model, isAdmin))
     throw new ConvexError('Pick another Model')
   return model
 }
@@ -59,7 +63,7 @@ export const options = query({
     if (!user) return null
     const models = await allModels(ctx)
     return models
-      .filter((m) => m.enabled && (!m.adminOnly || user.role === 'admin'))
+      .filter((m) => canUse(m, user.role === 'admin'))
       .map(({ _id, providerId, modelId, name, reasoningLevels }) => ({
         _id,
         providerId,

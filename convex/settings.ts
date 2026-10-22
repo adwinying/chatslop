@@ -1,5 +1,5 @@
 import type { QueryCtx } from '@/convex/_generated/server'
-import { v } from 'convex/values'
+import { ConvexError, v } from 'convex/values'
 import { mutation, query } from '@/convex/_generated/server'
 import { requireAdmin } from '@/convex/users'
 
@@ -29,6 +29,8 @@ export const update = mutation({
   args: { titleModelId: v.id('models') },
   handler: async (ctx, args) => {
     await requireAdmin(ctx)
+    if (!(await ctx.db.get('models', args.titleModelId)))
+      throw new ConvexError('That Model no longer exists')
     const settings = await ctx.db.query('settings').first()
     if (settings) await ctx.db.patch('settings', settings._id, args)
     else await ctx.db.insert('settings', args)

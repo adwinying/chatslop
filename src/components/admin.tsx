@@ -265,7 +265,7 @@ function ModelRow({ model }: { model: Doc<'models'> }) {
   )
   const remove = useMutation(api.models.remove)
   const { error, attempt } = useAttempt()
-  const set = (fields: { enabled?: boolean; adminOnly?: boolean }) =>
+  const save = (fields: { enabled?: boolean; adminOnly?: boolean }) =>
     void attempt(() =>
       update({
         modelId: model._id,
@@ -287,14 +287,14 @@ function ModelRow({ model }: { model: Doc<'models'> }) {
         <Toggle
           label={`Enable ${model.name}`}
           checked={model.enabled}
-          onChange={(enabled) => set({ enabled })}
+          onChange={(enabled) => save({ enabled })}
         />
       </td>
       <td className="py-1.5">
         <Toggle
           label={`${model.name} is Admin-only`}
           checked={model.adminOnly}
-          onChange={(adminOnly) => set({ adminOnly })}
+          onChange={(adminOnly) => save({ adminOnly })}
         />
       </td>
       <td className="py-1.5 text-right">

@@ -110,7 +110,7 @@ describe('threads.send', () => {
 
 describe('liveAnswers.finish', () => {
   test('inserts the Answer and deletes the Live answer together', async () => {
-    const { t, as, threadId, modelId } = await sendFirstPrompt()
+    const { t, as, threadId } = await sendFirstPrompt()
     const live = await liveAnswerOf(t, threadId)
 
     await t.mutation(internal.liveAnswers.finish, {
@@ -130,8 +130,16 @@ describe('liveAnswers.finish', () => {
         webSearch: true,
       },
     ])
-    // The Thread takes Prompts again.
-    await as.mutation(api.threads.send, { threadId, text: 'Next', modelId })
+    // The Thread takes Prompts again, and keeps the Model picked last.
+    const luna = await modelOf(t, 'gpt-6-luna')
+    await as.mutation(api.threads.send, {
+      threadId,
+      text: 'Next',
+      modelId: luna._id,
+    })
+    expect(await t.run((ctx) => ctx.db.get('threads', threadId))).toMatchObject(
+      { modelId: luna._id },
+    )
   })
 
   test('marks a stopped Answer as stopped', async () => {

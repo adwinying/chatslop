@@ -53,15 +53,15 @@ export const post = (
 async function signIn(t: Test, username: string, password: string) {
   const res = await post(t, '/sign-in/username', { username, password })
   const { token }: { token: string } = await res.json()
-  const session = await t.fetch('/api/auth/get-session', {
+  const sessionRes = await t.fetch('/api/auth/get-session', {
     headers: { Authorization: `Bearer ${token}` },
   })
-  const { user, ...rest }: { user: { id: string }; session: { id: string } } =
-    await session.json()
+  const { user, session }: { user: { id: string }; session: { id: string } } =
+    await sessionRes.json()
   return {
     token,
     userId: user.id,
-    as: t.withIdentity({ subject: user.id, sessionId: rest.session.id }),
+    as: t.withIdentity({ subject: user.id, sessionId: session.id }),
   }
 }
 

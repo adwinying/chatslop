@@ -66,7 +66,11 @@ export const send = mutation({
     const user = await authComponent.getAuthUser(ctx)
     const text = args.text.trim()
     if (!text) throw new ConvexError('Write a Prompt first')
-    const { _id: modelId } = await usableModel(ctx, args.modelId, user.role)
+    const { _id: modelId } = await usableModel(
+      ctx,
+      args.modelId,
+      user.role === 'admin',
+    )
     const now = Date.now()
 
     let threadId = args.threadId
