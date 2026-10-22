@@ -6,7 +6,9 @@ import { mutation, query } from '@/convex/_generated/server'
 import { authComponent } from '@/convex/auth'
 import { releasedSince } from '@/convex/listing'
 import { titleModelId } from '@/convex/settings'
+import { ownThread } from '@/convex/threads'
 import { requireAdmin } from '@/convex/users'
+import { settingsOf } from '@/convex/userSettings'
 
 /** Per Provider in creation order, the Models `select` picks. */
 async function byProvider(
@@ -73,24 +75,74 @@ export async function usableModel(
   return model
 }
 
-/** The Models the signed-in User can pick. Null while signed out. */
+/** Picker order within a Provider, by models.dev family. Unranked families go last. */
+const FAMILY_RANK = [
+  'claude-fable',
+  'claude-opus',
+  'claude-sonnet',
+  'claude-haiku',
+  'gpt-astra',
+  'gpt-sol',
+  'gpt-terra',
+  'gpt-luna',
+  'gpt-pro',
+  'gpt-codex',
+  'gpt-mini',
+]
+
+const rank = ({ family }: Doc<'models'>) => {
+  const index = FAMILY_RANK.indexOf(family)
+  return index === -1 ? FAMILY_RANK.length : index
+}
+
+/**
+ * What the composer offers the signed-in User: the Models they can pick, in
+ * order, their Favorites, and the remembered choices. The default Model is
+ * the Thread's, else the last sent with, else the first, skipping any no
+ * longer usable. Null while signed out.
+ */
 export const options = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { threadId: v.optional(v.id('threads')) },
+  handler: async (ctx, { threadId }) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user) return null
-    const models = await byProvider(ctx, (providerId) =>
-      modelsOf(ctx, providerId, true),
+    const thread = threadId && (await ownThread(ctx, threadId, user._id))
+    const settings = await settingsOf(ctx, user._id)
+    const providers = await ctx.db.query('providers').take(100)
+    const perProvider = await Promise.all(
+      providers.map(async (provider) =>
+        // Newest first, so the stable sort keeps that within a family.
+        (await modelsOf(ctx, provider._id, true))
+          .filter((m) => canUse(m, user.role === 'admin'))
+          .toSorted((a, b) => rank(a) - rank(b)),
+      ),
     )
-    return models
-      .filter((m) => canUse(m, user.role === 'admin'))
-      .map(({ _id, providerId, modelId, name, reasoningLevels }) => ({
-        _id,
-        providerId,
-        modelId,
-        name,
-        reasoningLevels,
-      }))
+    const models = perProvider.flat()
+    const usable = (id: Id<'models'> | undefined) =>
+      models.some((m) => m._id === id)
+
+    return {
+      // Only Providers with a Model to pick get a tab.
+      providers: providers
+        .filter((_, i) => perProvider[i]!.length > 0)
+        .map(({ _id, name, apiFormat }) => ({ _id, name, apiFormat })),
+      models: models.map(
+        ({ _id, providerId, name, reasoningLevels, adminOnly }) => ({
+          _id,
+          providerId,
+          name,
+          reasoningLevels,
+          adminOnly,
+        }),
+      ),
+      favoriteIds: settings.favoriteModelIds.filter(usable),
+      modelId:
+        [thread?.modelId, settings.lastModelId].find(usable) ??
+        models[0]?._id ??
+        null,
+      reasoningLevel: settings.lastReasoningLevel,
+      webSearch: settings.lastWebSearch,
+    }
   },
 })
 

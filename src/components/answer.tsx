@@ -1,5 +1,9 @@
 import type { Part } from '@/convex/parts'
-import type { answerStatus } from '@/convex/schema'
+import type {
+  answerStatus,
+  timingValidator,
+  usageValidator,
+} from '@/convex/schema'
 import type { Infer } from 'convex/values'
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
@@ -7,6 +11,7 @@ import { math } from '@streamdown/math'
 import {
   BrainIcon,
   ChevronDownIcon,
+  GlobeIcon,
   Loader2Icon,
   SquareIcon,
   TriangleAlertIcon,
@@ -17,17 +22,28 @@ import { cn } from '~/lib/utils'
 
 const plugins = { code, math, cjk }
 
-/** An Answer, finished or live: reasoning, markdown text, sources and its status. */
+/** What made a finished Answer. */
+type Made = {
+  modelName: string
+  reasoningLevel?: string
+  webSearch: boolean
+  usage?: Infer<typeof usageValidator>
+  timing?: Infer<typeof timingValidator>
+}
+
+/** An Answer, finished or live: reasoning, markdown text, sources, its status and what made it. */
 export function Answer({
   parts,
   streaming = false,
   status,
   error,
+  made,
 }: {
   parts: Part[]
   streaming?: boolean
   status?: Infer<typeof answerStatus>
   error?: string
+  made?: Made
 }) {
   const reasoning = parts
     .flatMap((part) => (part.type === 'reasoning' ? [part.text] : []))
@@ -101,7 +117,37 @@ export function Answer({
           {error}
         </div>
       )}
+      {made && <Label {...made} />}
     </article>
+  )
+}
+
+const count = new Intl.NumberFormat('en', { notation: 'compact' })
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
+
+/** Model · Reasoning level · Web search, with usage and timing on hover. */
+function Label({ modelName, reasoningLevel, webSearch, usage, timing }: Made) {
+  const stats = [
+    usage?.inputTokens !== undefined && `${count.format(usage.inputTokens)} in`,
+    usage?.outputTokens !== undefined &&
+      `${count.format(usage.outputTokens)} out`,
+    usage?.reasoningTokens !== undefined &&
+      `${count.format(usage.reasoningTokens)} reasoning`,
+    timing?.firstTokenMs !== undefined &&
+      `first token ${seconds(timing.firstTokenMs)}`,
+    timing && `${seconds(timing.durationMs)} total`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <p
+      title={stats || undefined}
+      className="mt-2 flex items-center gap-1 text-xs text-zinc-500"
+    >
+      {[modelName, reasoningLevel].filter(Boolean).join(' · ')}
+      {webSearch && <GlobeIcon aria-label="Web search" className="size-3" />}
+    </p>
   )
 }
 

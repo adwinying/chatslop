@@ -22,7 +22,7 @@ test('an Answer streams, resumes after a reload, and stops', async ({
 }) => {
   await logIn(page)
 
-  await expect(page.getByLabel('Model')).not.toHaveValue('')
+  await expect(page.getByRole('button', { name: /^Model: / })).toBeVisible()
   await page.getByLabel('Message').fill('Hello, mock')
   await page.getByLabel('Message').press('Enter')
 
@@ -48,4 +48,35 @@ test('an Answer streams, resumes after a reload, and stops', async ({
   await expect(answer).toHaveAttribute('aria-busy', 'false')
   await expect(page.getByRole('button', { name: 'Send' })).toBeVisible()
   expect(await lastWord(page)).toBeLessThan(200)
+})
+
+test('a Model picked by keyboard persists after sending and reloading', async ({
+  page,
+}) => {
+  await logIn(page)
+  const picker = page.getByRole('button', { name: /^Model: / })
+  const reasoning = page.getByLabel('Reasoning level')
+  // The dev database remembers earlier runs, so pick something else each time.
+  const model = (await picker.textContent())?.includes('Haiku')
+    ? 'Sonnet'
+    : 'Haiku'
+  const level = (await reasoning.inputValue()) === 'high' ? 'low' : 'high'
+
+  await picker.focus()
+  await page.keyboard.press('Enter')
+  await page.keyboard.type(model.toLowerCase())
+  await page.keyboard.press('Enter')
+  await expect(picker).toHaveAccessibleName(new RegExp(model))
+  await reasoning.selectOption(level)
+  await page.getByLabel('Message').fill('Pick me')
+  await page.getByLabel('Message').press('Enter')
+  await expect(page).toHaveURL(/\/chat\/\w+$/)
+  await page.reload()
+
+  await expect(picker).toHaveAccessibleName(new RegExp(model))
+  await expect(reasoning).toHaveValue(level)
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await expect(page.getByRole('article', { name: 'Answer' })).toContainText(
+    new RegExp(`${model} [\\d.]+ · ${level}`),
+  )
 })

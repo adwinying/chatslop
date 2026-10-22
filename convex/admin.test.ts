@@ -121,7 +121,11 @@ describe('providers', () => {
     const codex = await providerNamed(t, 'Codex')
     await bury(t, codex._id)
     const sol = await modelOf(t, 'gpt-6.1-sol')
-    await as.mutation(api.threads.send, { text: 'Hi', modelId: sol._id })
+    await as.mutation(api.threads.send, {
+      text: 'Hi',
+      modelId: sol._id,
+      webSearch: true,
+    })
 
     await expect(
       as.mutation(api.providers.remove, { providerId: codex._id }),
@@ -173,10 +177,10 @@ describe('models', () => {
       enabled: false,
     })
 
-    const ids = async (as: typeof user) =>
-      (await as.query(api.models.options, {}))!.map((m) => m.modelId)
-    expect(await ids(user)).toEqual(['claude-haiku-5-5'])
-    expect((await ids(admin)).toSorted()).toEqual([
+    const names = async (as: typeof user) =>
+      (await as.query(api.models.options, {}))!.models.map((m) => m.name)
+    expect(await names(user)).toEqual(['claude-haiku-5-5'])
+    expect((await names(admin)).toSorted()).toEqual([
       'claude-haiku-5-5',
       'gpt-6-luna',
     ])
@@ -188,10 +192,18 @@ describe('models', () => {
     ).rejects.toThrow('Admins only')
     // Nor can a User send with them.
     await expect(
-      user.mutation(api.threads.send, { text: 'Hi', modelId: luna._id }),
+      user.mutation(api.threads.send, {
+        text: 'Hi',
+        modelId: luna._id,
+        webSearch: true,
+      }),
     ).rejects.toThrow('Pick another Model')
     await expect(
-      user.mutation(api.threads.send, { text: 'Hi', modelId: sol._id }),
+      user.mutation(api.threads.send, {
+        text: 'Hi',
+        modelId: sol._id,
+        webSearch: true,
+      }),
     ).rejects.toThrow('Pick another Model')
   })
 
@@ -253,7 +265,11 @@ describe('models', () => {
     const luna = await modelOf(t, 'gpt-6-luna')
     const gpt56 = await modelOf(t, 'gpt-5.6')
     // The Live answer references sol.
-    await as.mutation(api.threads.send, { text: 'Hi', modelId: sol._id })
+    await as.mutation(api.threads.send, {
+      text: 'Hi',
+      modelId: sol._id,
+      webSearch: true,
+    })
 
     await expect(
       as.mutation(api.models.remove, { modelId: sol._id }),

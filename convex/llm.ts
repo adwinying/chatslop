@@ -23,7 +23,7 @@ export function modelCall({
 }: {
   provider: Doc<'providers'>
   model: Doc<'models'>
-  reasoningLevel: string
+  reasoningLevel?: string
   webSearch: boolean
 }): Call {
   if (env.MOCK_MODEL) return { model: mockModel() }
