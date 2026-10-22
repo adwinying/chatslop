@@ -146,3 +146,61 @@ test('the phone sidebar closes with Escape and returns focus', async ({
   await expect(threads).toBeHidden()
   await expect(menu).toBeFocused()
 })
+
+/** Sends the Prompt and stops its Answer. */
+async function sendAndStop(page: Page, text: string) {
+  await page.getByLabel('Message').fill(text)
+  await page.getByLabel('Message').press('Enter')
+  await expect(page).toHaveURL(/\/chat\/\w+$/)
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await expect(page.getByRole('button', { name: 'Send' })).toBeVisible()
+}
+
+test('an Answer regenerates with another Model', async ({ page }) => {
+  await logIn(page)
+  // The dev database remembers earlier runs, so pick something else each time.
+  const model = (
+    await page.getByRole('button', { name: /^Model: / }).textContent()
+  )?.includes('Haiku')
+    ? 'Sonnet'
+    : 'Haiku'
+  await sendAndStop(page, 'Regenerate me')
+  const answer = page.getByRole('article', { name: 'Answer' })
+
+  await answer
+    .getByRole('button', { name: 'Regenerate with another Model' })
+    .click()
+  await page.keyboard.type(model.toLowerCase())
+  await page.keyboard.press('Enter')
+
+  await expect(page.getByText('1 Message removed')).toBeVisible()
+  await expect(answer).toHaveAttribute('aria-busy', 'true')
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await expect(answer).toContainText(new RegExp(`${model} [\\d.]+`))
+  await expect(page.getByRole('article', { name: 'Prompt' })).toHaveText([
+    'Regenerate me',
+  ])
+})
+
+test('editing a Prompt mid-Thread resends it and drops what followed', async ({
+  page,
+}) => {
+  await logIn(page)
+  await sendAndStop(page, 'First')
+  await sendAndStop(page, 'Second')
+  const first = page.getByRole('article', { name: 'Prompt' }).first()
+
+  await first.hover()
+  await first.getByRole('button', { name: 'Edit' }).click()
+  await first.getByLabel('Edit Prompt').fill('First, edited')
+  await first.getByLabel('Edit Prompt').press('Enter')
+
+  await expect(page.getByText('3 Messages removed')).toBeVisible()
+  await expect(page.getByRole('article', { name: 'Prompt' })).toHaveText([
+    'First, edited',
+  ])
+  const answer = page.getByRole('article', { name: 'Answer' })
+  await expect(answer).toHaveAttribute('aria-busy', 'true')
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await expect(answer.getByText('Stopped')).toBeVisible()
+})

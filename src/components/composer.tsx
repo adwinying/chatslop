@@ -8,6 +8,13 @@ import { cn } from '~/lib/utils'
 /** The text area's ID, so a suggested prompt can focus it. */
 export const MESSAGE_ID = 'message'
 
+/** Enter sends; Shift+Enter and Enter during IME composition don't. */
+export function isSendKey(event: KeyboardEvent) {
+  // keyCode 229: Safari's confirming Enter arrives after composition ends.
+  const composing = event.nativeEvent.isComposing || event.keyCode === 229
+  return event.key === 'Enter' && !event.shiftKey && !composing
+}
+
 const pill =
   'flex items-center gap-1.5 rounded-full border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-800 has-focus-visible:ring-2 has-focus-visible:ring-ring/30'
 
@@ -54,10 +61,8 @@ export function Composer({
     }
   }
 
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    // keyCode 229: Safari's confirming Enter arrives after composition ends.
-    const composing = event.nativeEvent.isComposing || event.keyCode === 229
-    if (event.key !== 'Enter' || event.shiftKey || composing) return
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!isSendKey(event)) return
     event.preventDefault()
     void send()
   }

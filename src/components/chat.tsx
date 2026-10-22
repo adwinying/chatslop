@@ -4,6 +4,7 @@ import type { FunctionReturnType } from 'convex/server'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import { Answer } from '~/components/answer'
@@ -14,14 +15,27 @@ import {
   ReasoningSelect,
   WebSearchToggle,
 } from '~/components/composer'
+import {
+  AnswerActions,
+  PromptActions,
+  PromptEditor,
+} from '~/components/message-actions'
 import { ModelPicker } from '~/components/model-picker'
 import {
+  attempt,
   DeleteButton,
   PinButton,
   TitleInput,
 } from '~/components/thread-actions'
 import { draftKey, useDraft } from '~/lib/draft'
 import { cn } from '~/lib/utils'
+
+/** Runs a regenerate or edit, then toasts how many Messages it removed. */
+const truncate = (run: () => Promise<number>) =>
+  void attempt(run).then((removed) => {
+    if (removed)
+      toast(`${removed} ${removed === 1 ? 'Message' : 'Messages'} removed`)
+  })
 
 /** The Thread view, or a new Thread without a `threadId`. */
 export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
@@ -37,6 +51,9 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const draft = me ? draftKey(me.id, threadId) : undefined
   const thread = useQuery(api.threads.get, args)
   const deleted = !!threadId && thread === null && !!me
+  const regenerate = useMutation(api.threads.regenerate)
+  const edit = useMutation(api.threads.edit)
+  const lastAnswerId = messages?.findLast((m) => m.role === 'assistant')?._id
 
   // Another tab deleted it.
   useEffect(() => {
@@ -54,7 +71,24 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
           )}
           {messages?.map((message) =>
             message.role === 'user' ? (
-              <Prompt key={message._id} parts={message.parts} />
+              <Prompt
+                key={message._id}
+                text={textOf(message.parts)}
+                busy={!!live}
+                canSend={!!model}
+                onSend={(text) =>
+                  model &&
+                  truncate(() =>
+                    edit({
+                      promptId: message._id,
+                      text,
+                      modelId: model._id,
+                      reasoningLevel: choices.reasoningLevel,
+                      webSearch: choices.webSearch,
+                    }),
+                  )
+                }
+              />
             ) : (
               <Answer
                 key={message._id}
@@ -62,6 +96,22 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
                 status={message.status}
                 error={message.error}
                 made={message}
+                actions={
+                  <AnswerActions
+                    text={textOf(message.parts)}
+                    modelId={message.modelId}
+                    options={options}
+                    always={
+                      message._id === lastAnswerId || message.status === 'error'
+                    }
+                    disabled={!!live}
+                    onRegenerate={(modelId) =>
+                      truncate(() =>
+                        regenerate({ answerId: message._id, modelId }),
+                      )
+                    }
+                  />
+                }
               />
             ),
           )}
@@ -230,12 +280,48 @@ function Greeting({ name, draft }: { name: string; draft: string }) {
   )
 }
 
-function Prompt({ parts }: { parts: Part[] }) {
+const textOf = (parts: Part[]) =>
+  parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('')
+
+/** A Prompt bubble with Edit and Copy, which becomes an editor in place. */
+function Prompt({
+  text,
+  busy,
+  canSend,
+  onSend,
+}: {
+  text: string
+  /** While the Thread has a Live answer. */
+  busy: boolean
+  canSend: boolean
+  onSend: (text: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+
   return (
-    <article aria-label="Prompt" className="flex justify-end">
-      <div className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap">
-        {parts.map((part) => (part.type === 'text' ? part.text : '')).join('')}
-      </div>
+    <article aria-label="Prompt" className="group flex flex-col items-end">
+      {editing ? (
+        <PromptEditor
+          text={text}
+          disabled={busy || !canSend}
+          onSend={(edited) => {
+            setEditing(false)
+            onSend(edited)
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <>
+          <div className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap">
+            {text}
+          </div>
+          <PromptActions
+            text={text}
+            disabled={busy}
+            onEdit={() => setEditing(true)}
+          />
+        </>
+      )}
     </article>
   )
 }
