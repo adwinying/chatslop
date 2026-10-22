@@ -88,6 +88,14 @@ describe('threads.send', () => {
       'Thread not found',
     )
   })
+
+  // The client briefly reruns queries signed out after a reload.
+  test('shows nothing, rather than failing, while signed out', async () => {
+    const { t, threadId } = await sendFirstPrompt()
+
+    expect(await t.query(api.threads.messages, { threadId })).toBeNull()
+    expect(await t.query(api.liveAnswers.get, { threadId })).toBeNull()
+  })
 })
 
 describe('liveAnswers.finish', () => {

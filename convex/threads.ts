@@ -40,11 +40,12 @@ export async function ownThread(
   return thread
 }
 
-/** The Thread's finished Messages, oldest first. */
+/** The Thread's finished Messages, oldest first. Null while signed out. */
 export const messages = query({
   args: { threadId: v.id('threads') },
   handler: async (ctx, { threadId }) => {
-    const user = await authComponent.getAuthUser(ctx)
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user) return null
     await ownThread(ctx, threadId, user._id)
     return await latestMessages(ctx, threadId)
   },

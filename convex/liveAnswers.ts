@@ -19,11 +19,12 @@ export const HEARTBEAT_MS = 30_000
 /** A Live answer silent this long has lost its action, e.g. to a restart. */
 export const STALE_MS = 120_000
 
-/** The Thread's Live answer, which every open tab watches while it streams. */
+/** The Thread's Live answer, which every open tab watches while it streams. Null while signed out. */
 export const get = query({
   args: { threadId: v.id('threads') },
   handler: async (ctx, { threadId }) => {
-    const user = await authComponent.getAuthUser(ctx)
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user) return null
     await ownThread(ctx, threadId, user._id)
     return await liveAnswerOf(ctx, threadId)
   },
