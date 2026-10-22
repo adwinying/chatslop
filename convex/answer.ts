@@ -5,6 +5,7 @@ import { convertToModelMessages, readUIMessageStream, streamText } from 'ai'
 import { v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
 import { internalAction } from '@/convex/_generated/server'
+import { contextMessages } from '@/convex/context'
 import { modelCall, systemPrompt } from '@/convex/llm'
 import { usageValidator } from '@/convex/schema'
 
@@ -67,7 +68,14 @@ export const run = internalAction({
         messages: await convertToModelMessages(
           // Stored parts came from the SDK; the validator only loosened their JSON.
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-          messages as Array<Omit<UIMessage, 'id'>>,
+          (await contextMessages(
+            messages,
+            model.attachmentTypes,
+            async ({ storageId }) => {
+              const blob = await ctx.storage.get(storageId)
+              return blob && new Uint8Array(await blob.arrayBuffer())
+            },
+          )) as Array<Omit<UIMessage, 'id'>>,
           // A stopped Answer may end mid Web search; replay it without the call.
           { ignoreIncompleteToolCalls: true },
         ),

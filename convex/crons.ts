@@ -10,4 +10,11 @@ crons.interval(
   {},
 )
 
+crons.interval(
+  'delete Attachments left unsent for 24 hours',
+  { hours: 1 },
+  internal.attachments.sweep,
+  {},
+)
+
 export default crons

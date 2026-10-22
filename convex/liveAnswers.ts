@@ -9,6 +9,7 @@ import {
   internalQuery,
   query,
 } from '@/convex/_generated/server'
+import { attachmentsOf } from '@/convex/attachments'
 import { authComponent } from '@/convex/auth'
 import { partsValidator } from '@/convex/parts'
 import { timingValidator, usageValidator } from '@/convex/schema'
@@ -61,9 +62,15 @@ export const context = internalQuery({
       model,
       provider,
       // Errored Answers stay visible but out of Context; the User regenerates them.
-      messages: messages
-        .filter((m) => m.role === 'user' || m.status !== 'error')
-        .map(({ role, parts }) => ({ role, parts })),
+      messages: await Promise.all(
+        messages
+          .filter((m) => m.role === 'user' || m.status !== 'error')
+          .map(async ({ _id, role, parts }) => ({
+            role,
+            parts,
+            attachments: role === 'user' ? await attachmentsOf(ctx, _id) : [],
+          })),
+      ),
     }
   },
 })

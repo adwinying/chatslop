@@ -350,6 +350,7 @@ describe('threads.edit', () => {
     const removed = await as.mutation(api.threads.edit, {
       promptId: first!._id,
       text: ' Hello again ',
+      attachmentIds: [],
       modelId: luna._id,
       reasoningLevel: 'high',
       webSearch: false,
@@ -381,7 +382,7 @@ describe('threads.edit', () => {
 
   test('refuses an empty Prompt and an Answer', async () => {
     const { as, modelId, messages } = await twoExchanges()
-    const choices = { modelId, webSearch: false }
+    const choices = { attachmentIds: [], modelId, webSearch: false }
 
     await expect(
       as.mutation(api.threads.edit, {

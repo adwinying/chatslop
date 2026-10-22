@@ -1,4 +1,4 @@
-import type { Id } from '@/convex/_generated/dataModel'
+import type { Doc, Id } from '@/convex/_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '@/convex/_generated/server'
 import type { Infer } from 'convex/values'
 import {
@@ -8,8 +8,10 @@ import {
 import { ConvexError, v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
 import { mutation, query } from '@/convex/_generated/server'
+import { attachmentsOf, link, sendable } from '@/convex/attachments'
 import { authComponent } from '@/convex/auth'
 import { deleteThread, truncate } from '@/convex/cascade'
+import { kindOf } from '@/convex/intake'
 import { STALE_MS } from '@/convex/liveAnswers'
 import { usableModel } from '@/convex/models'
 import { reasoningLevelFor } from '@/convex/reasoning'
@@ -56,7 +58,11 @@ export async function viewThread(
   return await ownThread(ctx, threadId, userId)
 }
 
-/** The Thread's finished Messages, oldest first, Answers with their Model's name. Null while signed out. */
+/**
+ * The Thread's finished Messages, oldest first: Answers with their Model's
+ * name, Prompts with their Attachments, which the browser reads by ID alone.
+ * Null while signed out.
+ */
 export const messages = query({
   args: { threadId: v.id('threads') },
   handler: async (ctx, { threadId }) => {
@@ -71,8 +77,22 @@ export const messages = query({
           m.modelId,
           (await ctx.db.get('models', m.modelId))?.name ?? '',
         )
-    return latest.map((m) =>
-      m.role === 'assistant' ? { ...m, modelName: names.get(m.modelId)! } : m,
+    return await Promise.all(
+      latest.map(async (m) =>
+        m.role === 'assistant'
+          ? { ...m, modelName: names.get(m.modelId)! }
+          : {
+              ...m,
+              attachments: (await attachmentsOf(ctx, m._id)).map(
+                ({ _id, name, mediaType, size }) => ({
+                  _id,
+                  name,
+                  mediaType,
+                  size,
+                }),
+              ),
+            },
+      ),
     )
   },
 })
@@ -150,10 +170,34 @@ async function remember(
   })
 }
 
-function promptText(written: string) {
+/** The Prompt's text and what's stored for it. An Attachment-only Prompt keeps no text part. */
+function promptFields(written: string, attachments: Doc<'attachments'>[]) {
   const text = written.trim()
-  if (!text) throw new ConvexError('Write a Prompt first')
-  return text
+  if (!text && !attachments.length)
+    throw new ConvexError('Write a Prompt first')
+  return {
+    text,
+    fields: {
+      parts: text ? [{ type: 'text' as const, text }] : [],
+      // Filenames, not contents, are searchable and seen by the Title Model.
+      searchText: [text, ...attachments.map((a) => a.name)]
+        .filter(Boolean)
+        .join('\n'),
+    },
+  }
+}
+
+/** A new Thread's title until the Title Model's lands. */
+function fallbackTitle(text: string, attachments: Doc<'attachments'>[]) {
+  const file = attachments.find((a) => kindOf(a.mediaType) !== 'image')
+  const title =
+    text ||
+    (file
+      ? `File: ${file.name}`
+      : attachments.length === 1
+        ? 'Attached image'
+        : 'Attached images')
+  return title.slice(0, TITLE_LENGTH)
 }
 
 /**
@@ -165,19 +209,28 @@ export const send = mutation({
   args: {
     threadId: v.optional(v.id('threads')),
     text: v.string(),
+    attachmentIds: v.optional(v.array(v.id('attachments'))),
     ...choicesValidator.fields,
   },
-  handler: async (ctx, { threadId, text: written, ...picked }) => {
+  handler: async (
+    ctx,
+    { threadId, text: written, attachmentIds = [], ...picked },
+  ) => {
     const user = await authComponent.getAuthUser(ctx)
-    const text = promptText(written)
     const choices = await usableChoices(ctx, user.role === 'admin', picked)
+    const attachments = await sendable(ctx, {
+      userId: user._id,
+      attachmentIds,
+      modelId: choices.modelId,
+    })
+    const { text, fields } = promptFields(written, attachments)
 
     if (threadId) {
       await idleThread(ctx, threadId, user._id)
     } else {
       threadId = await ctx.db.insert('threads', {
         userId: user._id,
-        title: text.slice(0, TITLE_LENGTH),
+        title: fallbackTitle(text, attachments),
         titlePending: true,
         pinned: false,
         lastMessageAt: Date.now(),
@@ -185,17 +238,17 @@ export const send = mutation({
       })
       await ctx.scheduler.runAfter(0, internal.titles.generate, {
         threadId,
-        prompt: text,
+        prompt: fields.searchText,
       })
     }
 
-    await ctx.db.insert('messages', {
+    const promptId = await ctx.db.insert('messages', {
       threadId,
       userId: user._id,
       role: 'user',
-      parts: [{ type: 'text', text }],
-      searchText: text,
+      ...fields,
     })
+    await link(ctx, promptId, attachments)
     await startAnswer(ctx, threadId, user._id, choices)
     await remember(ctx, threadId, user._id, choices)
     return threadId
@@ -235,22 +288,31 @@ export const edit = mutation({
   args: {
     promptId: v.id('messages'),
     text: v.string(),
+    /** All the Prompt's Attachments after the edit; those left out are deleted. */
+    attachmentIds: v.array(v.id('attachments')),
     ...choicesValidator.fields,
   },
   returns: v.number(),
-  handler: async (ctx, { promptId, text: written, ...picked }) => {
+  handler: async (
+    ctx,
+    { promptId, text: written, attachmentIds, ...picked },
+  ) => {
     const user = await authComponent.getAuthUser(ctx)
-    const text = promptText(written)
     const prompt = await ctx.db.get('messages', promptId)
     if (prompt?.role !== 'user') throw new ConvexError('Prompt not found')
     await idleThread(ctx, prompt.threadId, user._id)
     const choices = await usableChoices(ctx, user.role === 'admin', picked)
+    const attachments = await sendable(ctx, {
+      userId: user._id,
+      attachmentIds,
+      modelId: choices.modelId,
+      promptId,
+    })
+    const { fields } = promptFields(written, attachments)
 
     const removed = await truncate(ctx, prompt, { keep: true })
-    await ctx.db.patch('messages', prompt._id, {
-      parts: [{ type: 'text', text }],
-      searchText: text,
-    })
+    await ctx.db.patch('messages', prompt._id, fields)
+    await link(ctx, prompt._id, attachments)
     await startAnswer(ctx, prompt.threadId, user._id, choices)
     await remember(ctx, prompt.threadId, user._id, choices)
     return removed
