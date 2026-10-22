@@ -1,15 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { AppSidebar } from '~/components/app-sidebar'
+import { Chat } from '~/components/chat'
 
 export const Route = createFileRoute('/')({
-  component: Home,
+  component: Chat,
 })
-
-function Home() {
-  return (
-    <div className="flex h-dvh">
-      <AppSidebar />
-      <main className="flex-1" />
-    </div>
-  )
-}

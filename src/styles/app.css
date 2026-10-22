@@ -8,6 +8,14 @@
 @import '@fontsource-variable/lora';
 @import '@fontsource-variable/noto-serif-jp';
 @import 'hack-font/build/web/hack.css';
+@import 'katex/dist/katex.min.css';
+@import 'streamdown/styles.css';
+
+/* Streamdown and its plugins ship Tailwind classes. */
+@source '../../node_modules/streamdown/dist/*.js';
+@source '../../node_modules/@streamdown/code/dist/*.js';
+@source '../../node_modules/@streamdown/math/dist/*.js';
+@source '../../node_modules/@streamdown/cjk/dist/*.js';
 
 @theme {
   --color-brand-100: #cfe6f1;

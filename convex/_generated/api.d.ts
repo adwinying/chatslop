@@ -8,9 +8,14 @@
  * @module
  */
 
+import type * as answer from "../answer.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
+import type * as liveAnswers from "../liveAnswers.js";
+import type * as llm from "../llm.js";
+import type * as parts from "../parts.js";
 import type * as seed from "../seed.js";
+import type * as threads from "../threads.js";
 import type * as users from "../users.js";
 
 import type {
@@ -20,9 +25,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  answer: typeof answer;
   auth: typeof auth;
   http: typeof http;
+  liveAnswers: typeof liveAnswers;
+  llm: typeof llm;
+  parts: typeof parts;
   seed: typeof seed;
+  threads: typeof threads;
   users: typeof users;
 }>;
 

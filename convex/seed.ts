@@ -1,6 +1,11 @@
 import { components } from '@/convex/_generated/api'
-import { env, internalAction } from '@/convex/_generated/server'
+import {
+  env,
+  internalAction,
+  internalMutation,
+} from '@/convex/_generated/server'
 import { createAuth } from '@/convex/auth'
+import { EFFORTS } from '@/convex/llm'
 
 /** Creates the first Admin from env vars. Does nothing once any Admin exists. */
 export const firstAdmin = internalAction({
@@ -31,6 +36,47 @@ export const firstAdmin = internalAction({
         role: 'admin',
         data: { username },
       },
+    })
+    return { created: true }
+  },
+})
+
+/**
+ * Creates the Codex and Claude Providers from env vars on first boot, with
+ * one hardcoded Model until Model sync lands.
+ */
+export const providers = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    if (await ctx.db.query('providers').first()) return { created: false }
+
+    const baseUrl = env.PROVIDER_BASE_URL ?? 'http://cli-proxy-api:8317/v1'
+    const apiKey = env.PROVIDER_API_KEY ?? ''
+    const codex = await ctx.db.insert('providers', {
+      name: 'Codex',
+      apiFormat: 'openai-responses',
+      baseUrl,
+      apiKey,
+      modelsDevProviderId: 'openai',
+    })
+    await ctx.db.insert('providers', {
+      name: 'Claude',
+      apiFormat: 'anthropic-messages',
+      baseUrl,
+      apiKey,
+      modelsDevProviderId: 'anthropic',
+    })
+    await ctx.db.insert('models', {
+      providerId: codex,
+      modelId: 'gpt-6.1-sol',
+      name: 'GPT-6.1 Sol',
+      family: 'gpt-sol',
+      releaseDate: '',
+      reasoningLevels: [...EFFORTS],
+      attachmentTypes: ['image', 'pdf'],
+      enabled: true,
+      adminOnly: false,
+      syncedAt: 0,
     })
     return { created: true }
   },
