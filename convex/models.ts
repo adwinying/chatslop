@@ -60,7 +60,7 @@ export async function inUse(ctx: QueryCtx, modelId: Id<'models'>) {
 }
 
 /** Enabled, and Admin-only only for Admins. */
-const canUse = (model: Doc<'models'>, isAdmin: boolean) =>
+export const canUse = (model: Doc<'models'>, isAdmin: boolean) =>
   model.enabled && (!model.adminOnly || isAdmin)
 
 /** The Model, if this User may send with it. */

@@ -16,7 +16,7 @@ import {
   SquareIcon,
   TriangleAlertIcon,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import { cn } from '~/lib/utils'
 
@@ -125,7 +125,10 @@ export function Answer({
 const count = new Intl.NumberFormat('en', { notation: 'compact' })
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
 
-/** Model · Reasoning level · Web search, with usage and timing on hover. */
+/**
+ * Model · Reasoning level · Web search. Usage and timing show on hover or
+ * focus, and a tap or click toggles them for touch.
+ */
 function Label({ modelName, reasoningLevel, webSearch, usage, timing }: Made) {
   const stats = [
     usage?.inputTokens !== undefined && `${count.format(usage.inputTokens)} in`,
@@ -140,14 +143,37 @@ function Label({ modelName, reasoningLevel, webSearch, usage, timing }: Made) {
     .filter(Boolean)
     .join(' · ')
 
+  const statsId = useId()
+  const [open, setOpen] = useState(false)
+
   return (
-    <p
-      title={stats || undefined}
-      className="mt-2 flex items-center gap-1 text-xs text-zinc-500"
-    >
-      {[modelName, reasoningLevel].filter(Boolean).join(' · ')}
-      {webSearch && <GlobeIcon aria-label="Web search" className="size-3" />}
-    </p>
+    <div className="group/label relative mt-2 inline-flex">
+      <button
+        type="button"
+        aria-label={[modelName, reasoningLevel, webSearch && 'Web search']
+          .filter(Boolean)
+          .join(' · ')}
+        aria-expanded={open}
+        aria-describedby={statsId}
+        onClick={() => setOpen(!open)}
+        onBlur={() => setOpen(false)}
+        className="flex items-center gap-1 rounded text-xs text-zinc-500 outline-none hover:text-zinc-300 focus-visible:ring-2 focus-visible:ring-ring/30"
+      >
+        {[modelName, reasoningLevel].filter(Boolean).join(' · ')}
+        {webSearch && <GlobeIcon aria-hidden className="size-3" />}
+      </button>
+      <span
+        id={statsId}
+        role="tooltip"
+        className={cn(
+          'absolute bottom-full left-0 mb-2 w-max rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300',
+          !open &&
+            'hidden group-hover/label:block group-has-focus-visible/label:block',
+        )}
+      >
+        {stats || 'No usage recorded'}
+      </span>
+    </div>
   )
 }
 

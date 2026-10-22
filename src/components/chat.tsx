@@ -14,7 +14,7 @@ import {
   WebSearchToggle,
 } from '~/components/composer'
 import { ModelPicker } from '~/components/model-picker'
-import { useDraft } from '~/lib/draft'
+import { draftKey, useDraft } from '~/lib/draft'
 
 /** The Thread view, or a new Thread without a `threadId`. */
 export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
@@ -26,6 +26,8 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const stop = useMutation(api.threads.stop)
   const choices = useChoices(threadId)
   const { options, model } = choices
+  const me = useQuery(api.users.me)
+  const draft = me ? draftKey(me.id, threadId) : undefined
 
   return (
     <div className="flex h-dvh">
@@ -34,7 +36,9 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
         {/* Reversed, so the view stays pinned to the newest text as it streams. */}
         <div className="flex flex-1 flex-col-reverse overflow-y-auto px-4 pb-40">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-8">
-            {!threadId && <Greeting />}
+            {!threadId && me && (
+              <Greeting name={me.name} draft={draftKey(me.id)} />
+            )}
             {messages?.map((message) =>
               message.role === 'user' ? (
                 <Prompt key={message._id} parts={message.parts} />
@@ -53,7 +57,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
         </div>
         <div className="absolute inset-x-0 bottom-0 px-2 sm:px-4">
           <Composer
-            threadId={threadId}
+            draftKey={draft}
             streaming={!!live}
             blockReason={
               options === undefined
@@ -147,15 +151,12 @@ const SUGGESTIONS = [
   'Compare TCP and QUIC in a table',
 ]
 
-function Greeting() {
-  const me = useQuery(api.users.me)
-  const [, setDraft] = useDraft()
+function Greeting({ name, draft }: { name: string; draft: string }) {
+  const [, setDraft] = useDraft(draft)
 
   return (
     <div className="mt-[12vh] w-full max-w-xl self-center">
-      <h1 className="text-3xl font-semibold">
-        How can I help you{me ? `, ${me.name}` : ''}?
-      </h1>
+      <h1 className="text-3xl font-semibold">How can I help you, {name}?</h1>
       <ul className="mt-6">
         {SUGGESTIONS.map((suggestion) => (
           <li key={suggestion}>

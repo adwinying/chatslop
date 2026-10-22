@@ -13,6 +13,7 @@ import {
   syncModels,
   type Test,
 } from '@/convex/test.setup'
+import { MAX_FAVORITES } from '@/convex/userSettings'
 
 type As = Awaited<ReturnType<typeof signInAdmin>>['as']
 
@@ -197,5 +198,51 @@ describe('userSettings.toggleFavorite', () => {
     await expect(
       user.mutation(api.userSettings.toggleFavorite, { modelId: luna!._id }),
     ).rejects.toThrow('Pick another Model')
+  })
+
+  test('drops Favorites the User lost, and stops at the limit', async () => {
+    const t = setup()
+    await syncModels(t)
+    const { as: user, userId } = await signInUser(t)
+    const { as: admin } = await signInAdmin(t)
+    const [haiku, luna, sol] = await Promise.all(
+      ['claude-haiku-5-5', 'gpt-6-luna', 'gpt-6.1-sol'].map((id) =>
+        modelOf(t, id),
+      ),
+    )
+    const favorites = () =>
+      t.run(async (ctx) => {
+        const settings = await ctx.db
+          .query('userSettings')
+          .withIndex('by_user', (q) => q.eq('userId', userId))
+          .unique()
+        return settings!.favoriteModelIds
+      })
+
+    for (const model of [haiku, sol])
+      await user.mutation(api.userSettings.toggleFavorite, {
+        modelId: model!._id,
+      })
+    await admin.mutation(api.models.update, {
+      modelId: haiku!._id,
+      enabled: false,
+    })
+    await user.mutation(api.userSettings.toggleFavorite, { modelId: luna!._id })
+    expect(await favorites()).toEqual([sol!._id, luna!._id])
+
+    const { _id, _creationTime, ...copy } = sol!
+    const more = await t.run((ctx) =>
+      Promise.all(
+        Array.from({ length: MAX_FAVORITES - 1 }, (_, i) =>
+          ctx.db.insert('models', { ...copy, modelId: `copy-${i}` }),
+        ),
+      ),
+    )
+    for (const modelId of more.slice(1))
+      await user.mutation(api.userSettings.toggleFavorite, { modelId })
+    expect(await favorites()).toHaveLength(MAX_FAVORITES)
+    await expect(
+      user.mutation(api.userSettings.toggleFavorite, { modelId: more[0]! }),
+    ).rejects.toThrow(`at most ${MAX_FAVORITES} Favorites`)
   })
 })

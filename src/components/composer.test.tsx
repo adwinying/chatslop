@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { Composer } from '~/components/composer'
+import { draftKey } from '~/lib/draft'
 
 function renderComposer({
   streaming = false,
@@ -10,7 +11,7 @@ function renderComposer({
   const onStop = vi.fn<() => void>()
   const composer = (
     <Composer
-      threadId="t1"
+      draftKey={draftKey('alice', 't1')}
       streaming={streaming}
       blockReason={blockReason}
       onSend={onSend}
@@ -104,15 +105,32 @@ describe('Composer', () => {
     )
   })
 
-  test("keeps each Thread's Draft across reloads", () => {
+  test("keeps each User's Draft per Thread across reloads", () => {
     const { unmount, composer } = renderComposer()
     unmount()
 
     render(composer)
-
     expect(screen.getByLabelText('Message')).toHaveProperty('value', 'Hello')
     cleanup()
-    render(<Composer {...composer.props} threadId="t2" />)
-    expect(screen.getByLabelText('Message')).toHaveProperty('value', '')
+
+    // Another Thread, or another User signed in on this browser, starts empty.
+    for (const key of [draftKey('alice', 't2'), draftKey('bob', 't1')]) {
+      render(<Composer {...composer.props} draftKey={key} />)
+      expect(screen.getByLabelText('Message')).toHaveProperty('value', '')
+      cleanup()
+    }
+  })
+
+  test('waits for the Draft to be known before taking text', () => {
+    render(
+      <Composer
+        draftKey={undefined}
+        streaming={false}
+        onSend={vi.fn<(text: string) => Promise<unknown>>()}
+        onStop={vi.fn<() => void>()}
+      />,
+    )
+
+    expect(screen.getByLabelText('Message')).toHaveProperty('disabled', true)
   })
 })

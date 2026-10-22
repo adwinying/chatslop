@@ -16,14 +16,15 @@ const pill =
  * which becomes Stop while the Answer streams.
  */
 export function Composer({
-  threadId,
+  draftKey,
   streaming,
   blockReason,
   controls,
   onSend,
   onStop,
 }: {
-  threadId?: string
+  /** From `draftKey()`; the text area waits for it. */
+  draftKey: string | undefined
   streaming: boolean
   /** Why Send is blocked, e.g. no Model to send with. Shown once there's text. */
   blockReason?: string
@@ -32,7 +33,7 @@ export function Composer({
   onSend: (text: string) => Promise<unknown>
   onStop: () => void
 }) {
-  const [text, setText] = useDraft(threadId)
+  const [text, setText] = useDraft(draftKey)
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const hasText = text.trim() !== ''
@@ -72,6 +73,7 @@ export function Composer({
       <textarea
         id={MESSAGE_ID}
         aria-label="Message"
+        disabled={!draftKey}
         placeholder="Type your message here…"
         rows={2}
         value={text}
