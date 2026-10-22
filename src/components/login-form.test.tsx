@@ -5,7 +5,10 @@ import { authClient } from "~/lib/auth-client";
 
 vi.mock("~/lib/auth-client", () => ({
   authClient: {
-    signIn: { email: vi.fn<() => Promise<unknown>>(), username: vi.fn<() => Promise<unknown>>() },
+    signIn: {
+      email: vi.fn<() => Promise<unknown>>(),
+      username: vi.fn<() => Promise<unknown>>(),
+    },
   },
 }));
 
@@ -15,8 +18,12 @@ const rejected = { data: null, error: { status: 401, message: "Invalid" } };
 function logIn(identifier: string, password = "pw") {
   const onSuccess = vi.fn<() => void>();
   render(<LoginForm onSuccess={onSuccess} />);
-  fireEvent.change(screen.getByLabelText("Username or email"), { target: { value: identifier } });
-  fireEvent.change(screen.getByLabelText("Password"), { target: { value: password } });
+  fireEvent.change(screen.getByLabelText("Username or email"), {
+    target: { value: identifier },
+  });
+  fireEvent.change(screen.getByLabelText("Password"), {
+    target: { value: password },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Log in" }));
   return onSuccess;
 }
@@ -33,7 +40,10 @@ describe("LoginForm", () => {
     const onSuccess = logIn("adwin");
 
     await vi.waitFor(() => expect(onSuccess).toHaveBeenCalled());
-    expect(authClient.signIn.username).toHaveBeenCalledWith({ username: "adwin", password: "pw" });
+    expect(authClient.signIn.username).toHaveBeenCalledWith({
+      username: "adwin",
+      password: "pw",
+    });
   });
 
   test("signs in by email when the identifier has an @", async () => {

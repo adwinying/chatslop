@@ -10,10 +10,12 @@ const upstream = "127.0.0.1:3210";
 const SYNC = /^\/api\/\d+\.\d+\.\d+\/sync$/;
 const STORAGE = /^\/api\/storage\//;
 
-const upstreamPath = (url: URL) => url.pathname.slice("/convex".length) + url.search;
+const upstreamPath = (url: URL) =>
+  url.pathname.slice("/convex".length) + url.search;
 
 const sync = createWebSocketProxy({
-  target: (peer) => `ws://${upstream}${upstreamPath(new URL(peer.request.url))}`,
+  target: (peer) =>
+    `ws://${upstream}${upstreamPath(new URL(peer.request.url))}`,
   // Compression on the loopback leg only costs CPU.
   webSocketOptions: { perMessageDeflate: false },
 });

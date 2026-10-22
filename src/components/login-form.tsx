@@ -37,7 +37,12 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
     <form method="post" onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
         <Label htmlFor="identifier">Username or email</Label>
-        <Input id="identifier" name="identifier" autoComplete="username" required />
+        <Input
+          id="identifier"
+          name="identifier"
+          autoComplete="username"
+          required
+        />
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="password">Password</Label>

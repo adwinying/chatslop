@@ -15,13 +15,21 @@ test("a signed-out visit redirects to /login", async ({ page }) => {
 test("signup is rejected", async ({ request }) => {
   const res = await request.post("/api/auth/sign-up/email", {
     headers: { Origin: "http://localhost:3000" },
-    data: { email: "intruder@example.com", password: "intruder-password", name: "Intruder" },
+    data: {
+      email: "intruder@example.com",
+      password: "intruder-password",
+      name: "Intruder",
+    },
   });
   expect(res.status()).toBe(400);
-  expect(await res.json()).toMatchObject({ code: "EMAIL_PASSWORD_SIGN_UP_DISABLED" });
+  expect(await res.json()).toMatchObject({
+    code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+  });
 });
 
-test("the seeded Admin logs in, sees the shell over /convex, and logs out", async ({ page }) => {
+test("the seeded Admin logs in, sees the shell over /convex, and logs out", async ({
+  page,
+}) => {
   const sockets: string[] = [];
   page.on("websocket", (ws) => sockets.push(ws.url()));
 
@@ -36,7 +44,9 @@ test("the seeded Admin logs in, sees the shell over /convex, and logs out", asyn
   await expect(sidebar.getByRole("button", { name: "New Chat" })).toBeVisible();
   // The footer's role comes from a Convex query, so it proves the socket works.
   await expect(sidebar.getByText("Admin", { exact: true })).toBeVisible();
-  expect(sockets.some((url) => new URL(url).pathname.startsWith("/convex/api/"))).toBe(true);
+  expect(
+    sockets.some((url) => new URL(url).pathname.startsWith("/convex/api/")),
+  ).toBe(true);
 
   await sidebar.getByRole("button", { name: "Log out" }).click();
   await expect(page).toHaveURL("/login");
