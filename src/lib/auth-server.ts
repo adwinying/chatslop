@@ -1,5 +1,5 @@
 import { convexBetterAuthReactStart } from '@convex-dev/better-auth/react-start'
-import { CONVEX_ORIGIN } from '~/lib/convex-url'
+import { CONVEX_ORIGIN } from '~/lib/convex-origin'
 
 export const { handler, getToken } = convexBetterAuthReactStart({
   convexUrl: CONVEX_ORIGIN,

@@ -5,17 +5,19 @@
 import { createWebSocketProxy } from 'crossws'
 import { defineHandler, defineWebSocketHandler, HTTPError } from 'nitro'
 import { proxy } from 'nitro/h3'
+import { CONVEX_ORIGIN } from '~/lib/convex-origin'
 
-const upstream = '127.0.0.1:3210'
 const SYNC = /^\/api\/\d+\.\d+\.\d+\/sync$/
 const STORAGE = /^\/api\/storage\//
 
-const upstreamPath = (url: URL) =>
-  url.pathname.slice('/convex'.length) + url.search
+/** The pathname Convex serves: `/convex/api/…` → `/api/…`. */
+const stripPrefix = (url: URL) => url.pathname.slice('/convex'.length)
+const upstreamPath = (url: URL) => stripPrefix(url) + url.search
 
 const sync = createWebSocketProxy({
   target: (peer) =>
-    `ws://${upstream}${upstreamPath(new URL(peer.request.url))}`,
+    CONVEX_ORIGIN.replace(/^http/, 'ws') +
+    upstreamPath(new URL(peer.request.url)),
   // Compression on the loopback leg only costs CPU.
   webSocketOptions: { perMessageDeflate: false },
 })
@@ -24,16 +26,16 @@ export default defineWebSocketHandler(
   {
     ...sync,
     upgrade(request) {
-      if (!SYNC.test(new URL(request.url).pathname.slice('/convex'.length))) {
+      if (!SYNC.test(stripPrefix(new URL(request.url)))) {
         throw new Response('Not found', { status: 404 })
       }
       return sync.upgrade?.(request)
     },
   },
   defineHandler((event) => {
-    if (!STORAGE.test(event.url.pathname.slice('/convex'.length))) {
+    if (!STORAGE.test(stripPrefix(event.url))) {
       throw new HTTPError('Not found', { status: 404 })
     }
-    return proxy(event, `http://${upstream}${upstreamPath(event.url)}`)
+    return proxy(event, CONVEX_ORIGIN + upstreamPath(event.url))
   }),
 )
