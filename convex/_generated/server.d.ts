@@ -36,6 +36,7 @@ type Env = {
   readonly BETTER_AUTH_SECRET: string;
   readonly MOCK_MODEL: string | undefined;
   readonly SITE_URL: string;
+  readonly TRUSTED_ORIGINS: string | undefined;
 };
 
 /**

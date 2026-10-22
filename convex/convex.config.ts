@@ -5,6 +5,8 @@ import betterAuth from '@/convex/betterAuth/convex.config'
 const app = defineApp({
   env: {
     SITE_URL: v.string(),
+    // Comma-separated extra origins, wildcards allowed: `http://192.168.*:3000`.
+    TRUSTED_ORIGINS: v.optional(v.string()),
     BETTER_AUTH_SECRET: v.string(),
     // Read only by seed:firstAdmin.
     ADMIN_EMAIL: v.optional(v.string()),
