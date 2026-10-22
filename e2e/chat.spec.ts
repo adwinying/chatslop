@@ -257,7 +257,7 @@ test('a pasted image is sent, shows as a thumbnail, and only its owner can read 
   expect(own.headers()['content-type']).toBe('image/webp')
 
   // Another User, created by the Admin; earlier runs may have made them already.
-  const other = { username: 'e2e-other', password: 'e2e-other-password' }
+  const other = { username: 'e2e_other', password: 'e2e-other-password' }
   const origin = { Origin: 'http://localhost:3000' }
   await page.request.post('/api/auth/admin/create-user', {
     headers: origin,
