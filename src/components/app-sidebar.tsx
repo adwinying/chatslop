@@ -1,8 +1,8 @@
-import { useQuery } from "convex/react";
-import { LogOutIcon } from "lucide-react";
-import { api } from "../../convex/_generated/api";
-import { Button } from "~/components/ui/button";
-import { authClient } from "~/lib/auth-client";
+import { useQuery } from "convex/react"
+import { LogOutIcon } from "lucide-react"
+import { api } from "../../convex/_generated/api"
+import { Button } from "~/components/ui/button"
+import { authClient } from "~/lib/auth-client"
 
 export function AppSidebar() {
   return (
@@ -18,17 +18,17 @@ export function AppSidebar() {
       <nav className="flex-1 overflow-y-auto px-2 py-2" />
       <UserFooter />
     </aside>
-  );
+  )
 }
 
 // expectAuth makes a plain reload the only safe way back to signed out.
 async function signOut() {
-  await authClient.signOut();
-  location.reload();
+  await authClient.signOut()
+  location.reload()
 }
 
 function UserFooter() {
-  const me = useQuery(api.users.me);
+  const me = useQuery(api.users.me)
 
   return (
     <div className="flex items-center gap-2 border-t border-sidebar-border p-3 text-sm">
@@ -51,5 +51,5 @@ function UserFooter() {
         <LogOutIcon />
       </Button>
     </div>
-  );
+  )
 }

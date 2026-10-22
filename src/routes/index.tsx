@@ -1,9 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AppSidebar } from "~/components/app-sidebar";
+import { createFileRoute } from "@tanstack/react-router"
+import { AppSidebar } from "~/components/app-sidebar"
 
 export const Route = createFileRoute("/")({
   component: Home,
-});
+})
 
 function Home() {
   return (
@@ -11,5 +11,5 @@ function Home() {
       <AppSidebar />
       <main className="flex-1" />
     </div>
-  );
+  )
 }
