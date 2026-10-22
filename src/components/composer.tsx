@@ -6,11 +6,14 @@ import { Button } from '~/components/ui/button'
 /** Plain textarea with Send, which becomes Stop while the Answer streams. */
 export function Composer({
   streaming,
+  disabled = false,
   controls,
   onSend,
   onStop,
 }: {
   streaming: boolean
+  /** Blocks sending, e.g. until there's a Model to send with. */
+  disabled?: boolean
   /** Pickers shown left of Send. */
   controls?: ReactNode
   onSend: (text: string) => Promise<unknown>
@@ -19,7 +22,7 @@ export function Composer({
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
-  const canSend = !streaming && !sending && text.trim() !== ''
+  const canSend = !disabled && !streaming && !sending && text.trim() !== ''
 
   const send = async () => {
     if (!canSend) return

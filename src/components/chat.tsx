@@ -46,6 +46,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
         <div className="absolute inset-x-0 bottom-0 px-2 sm:px-4">
           <Composer
             streaming={!!live}
+            disabled={!model}
             controls={
               <select
                 aria-label="Model"
@@ -66,7 +67,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
               </select>
             }
             onSend={async (text) => {
-              if (!model) throw new Error('No Model to send with')
+              if (!model) return
               const id = await send({ threadId, text, modelId: model._id })
               if (!threadId)
                 await navigate({

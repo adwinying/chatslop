@@ -22,6 +22,7 @@ test('an Answer streams, resumes after a reload, and stops', async ({
 }) => {
   await logIn(page)
 
+  await expect(page.getByLabel('Model')).not.toHaveValue('')
   await page.getByLabel('Message').fill('Hello, mock')
   await page.getByLabel('Message').press('Enter')
 
