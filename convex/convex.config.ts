@@ -1,6 +1,6 @@
-import { defineApp } from "convex/server";
-import { v } from "convex/values";
-import betterAuth from "./betterAuth/convex.config";
+import { defineApp } from "convex/server"
+import { v } from "convex/values"
+import betterAuth from "./betterAuth/convex.config"
 
 const app = defineApp({
   env: {
@@ -11,7 +11,7 @@ const app = defineApp({
     ADMIN_USERNAME: v.optional(v.string()),
     ADMIN_PASSWORD: v.optional(v.string()),
   },
-});
-app.use(betterAuth);
+})
+app.use(betterAuth)
 
-export default app;
+export default app

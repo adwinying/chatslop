@@ -1,4 +1,4 @@
-import { defineConfig, devices } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test"
 
 export default defineConfig({
   testDir: "./e2e",
@@ -15,4 +15,4 @@ export default defineConfig({
     // convex dev stops its backend and vite on SIGINT; a hard kill orphans them.
     gracefulShutdown: { signal: "SIGINT", timeout: 15_000 },
   },
-});
+})

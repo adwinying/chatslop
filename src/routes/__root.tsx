@@ -1,25 +1,23 @@
 /// <reference types="vite/client" />
-import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
+import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react"
 import {
   createRootRouteWithContext,
   HeadContent,
   Outlet,
   redirect,
   Scripts,
-} from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
-import type { ConvexReactClient } from "convex/react";
-import type { ReactNode } from "react";
-import { authClient } from "~/lib/auth-client";
-import { getToken } from "~/lib/auth-server";
-import appCss from "~/styles/app.css?url";
+} from "@tanstack/react-router"
+import { createServerFn } from "@tanstack/react-start"
+import type { ConvexReactClient } from "convex/react"
+import type { ReactNode } from "react"
+import { authClient } from "~/lib/auth-client"
+import { getToken } from "~/lib/auth-server"
+import appCss from "~/styles/app.css?url"
 
-const getAuthToken = createServerFn({ method: "GET" }).handler(() =>
-  getToken(),
-);
+const getAuthToken = createServerFn({ method: "GET" }).handler(() => getToken())
 
 export const Route = createRootRouteWithContext<{
-  convex: ConvexReactClient;
+  convex: ConvexReactClient
 }>()({
   head: () => ({
     meta: [
@@ -30,17 +28,17 @@ export const Route = createRootRouteWithContext<{
     links: [{ rel: "stylesheet", href: appCss }],
   }),
   beforeLoad: async ({ location }) => {
-    const token = (await getAuthToken()) ?? null;
+    const token = (await getAuthToken()) ?? null
     if (!token && location.pathname !== "/login")
-      throw redirect({ to: "/login" });
-    return { token };
+      throw redirect({ to: "/login" })
+    return { token }
   },
   component: RootComponent,
   shellComponent: RootDocument,
-});
+})
 
 function RootComponent() {
-  const { convex, token } = Route.useRouteContext();
+  const { convex, token } = Route.useRouteContext()
   return (
     <ConvexBetterAuthProvider
       client={convex}
@@ -50,7 +48,7 @@ function RootComponent() {
     >
       <Outlet />
     </ConvexBetterAuthProvider>
-  );
+  )
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
@@ -64,5 +62,5 @@ function RootDocument({ children }: { children: ReactNode }) {
         <Scripts />
       </body>
     </html>
-  );
+  )
 }
