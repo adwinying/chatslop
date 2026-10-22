@@ -54,3 +54,51 @@ jobs:
         with:
           name: playwright-traces
           path: test-results/
+
+  image:
+    name: Image
+    needs: [check, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/adwinying/chatslop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install mise tools
+        uses: jdx/mise-action@v5
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build
+        run: docker build --platform linux/amd64 -t "$IMAGE:latest" -t "$IMAGE:$GITHUB_SHA" .
+
+      # Healthy means Convex is deployed and seeded and the app is serving.
+      - name: Start container
+        run: |
+          docker run -d --init --name chatslop --env-file dev.env -p 3000:3000 "$IMAGE:$GITHUB_SHA"
+          timeout 300 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" chatslop)" = healthy ]; do sleep 2; done'
+
+      - name: E2E against the container
+        run: pnpm e2e
+        env:
+          E2E_CONTAINER: 1
+
+      - name: Container logs
+        if: failure()
+        run: docker logs chatslop
+
+      - name: Push
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push --all-tags "$IMAGE"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

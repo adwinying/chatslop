@@ -1,0 +1,24 @@
+# Sample deployment. Locally, `docker compose up` serves http://localhost:3000.
+# On a server, swap `build` for `image: ghcr.io/adwinying/chatslop:latest` and
+# dev.env for a private env file.
+services:
+  chatslop:
+    build: .
+    init: true
+    # The Convex backend shuts down cleanly only on SIGINT.
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+    restart: unless-stopped
+    env_file: dev.env
+    # BACKUP_INTERVAL_SECONDS (default 86400) sets how often Convex is exported
+    # into backups/ on the volume.
+    ports:
+      # Behind a reverse proxy on the same host.
+      - 127.0.0.1:3000:3000
+      # For the `convex` CLI and the ad hoc dashboard over the LAN.
+      # - <LAN IP>:3210:3210
+    volumes:
+      - data:/convex/data
+
+volumes:
+  data:
