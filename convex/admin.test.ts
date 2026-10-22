@@ -19,10 +19,14 @@ const providerNamed = (t: Test, name: string) =>
     return providers.find((p) => p.name === name)!
   })
 
-/** 500 old, disabled Models that sort before the real ones by `modelId`. */
-const bury = (t: Test, providerId: Id<'providers'>) =>
+/** Old Models that sort before the real ones by `modelId`. */
+const bury = (
+  t: Test,
+  providerId: Id<'providers'>,
+  { count = 500, enabled = false } = {},
+) =>
   t.run(async (ctx) => {
-    for (let i = 0; i < 500; i++)
+    for (let i = 0; i < count; i++)
       await ctx.db.insert('models', {
         providerId,
         modelId: `a-${String(i).padStart(3, '0')}`,
@@ -33,7 +37,7 @@ const bury = (t: Test, providerId: Id<'providers'>) =>
         attachmentTypes: [],
         contextLimit: 0,
         outputLimit: 0,
-        enabled: false,
+        enabled,
         adminOnly: false,
         syncedAt: 0,
       })
@@ -216,6 +220,29 @@ describe('models', () => {
       'gpt-6-luna',
       'gpt-6.1-sol',
     ])
+  })
+
+  test('a Provider has at most 100 enabled Models', async () => {
+    const t = setup()
+    await syncModels(t)
+    const { as } = await signInAdmin(t)
+    const claude = await providerNamed(t, 'Claude')
+    // Haiku is already on, so 99 more fill the Provider.
+    await bury(t, claude._id, { count: 99, enabled: true })
+    const haiku = await modelOf(t, 'claude-haiku-5-5')
+    await as.mutation(api.models.update, {
+      modelId: haiku._id,
+      adminOnly: true,
+    })
+    await as.mutation(api.models.update, { modelId: haiku._id, enabled: true })
+
+    const { _id, _creationTime, ...fields } = haiku
+    const extra = await t.run((ctx) =>
+      ctx.db.insert('models', { ...fields, modelId: 'zz', enabled: false }),
+    )
+    await expect(
+      as.mutation(api.models.update, { modelId: extra, enabled: true }),
+    ).rejects.toThrow('100 enabled Models')
   })
 
   test('deletes a Model only while nothing references it', async () => {

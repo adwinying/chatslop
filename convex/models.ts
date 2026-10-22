@@ -18,6 +18,14 @@ async function byProvider(
   return perProvider.flat()
 }
 
+/** Enforced by `update`, so reading this many enabled Models reads them all. */
+const MAX_ENABLED = 100
+/**
+ * A product limit on the disabled Models one 18-month window lists per
+ * Provider. models.dev releases far fewer.
+ */
+const MAX_LISTED_DISABLED = 500
+
 /** A Provider's enabled or disabled Models released from `from`, newest first. */
 const modelsOf = (
   ctx: QueryCtx,
@@ -27,14 +35,14 @@ const modelsOf = (
 ) =>
   ctx.db
     .query('models')
-    .withIndex('by_provider_enabled', (q) =>
+    .withIndex('by_provider_enabled_releaseDate', (q) =>
       q
         .eq('providerId', providerId)
         .eq('enabled', enabled)
         .gte('releaseDate', from),
     )
     .order('desc')
-    .take(500)
+    .take(enabled ? MAX_ENABLED : MAX_LISTED_DISABLED)
 
 /** Whether a Message, a Live answer or the Title Model setting points at the Model. */
 export async function inUse(ctx: QueryCtx, modelId: Id<'models'>) {
@@ -126,6 +134,15 @@ export const update = mutation({
   },
   handler: async (ctx, { modelId, ...fields }) => {
     await requireAdmin(ctx)
+    const model = await ctx.db.get('models', modelId)
+    if (!model) throw new ConvexError('That Model no longer exists')
+    if (fields.enabled && !model.enabled) {
+      const enabled = await modelsOf(ctx, model.providerId, true)
+      if (enabled.length >= MAX_ENABLED)
+        throw new ConvexError(
+          `A Provider has at most ${MAX_ENABLED} enabled Models. Disable one first.`,
+        )
+    }
     await ctx.db.patch('models', modelId, fields)
   },
 })

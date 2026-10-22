@@ -58,7 +58,11 @@ export default defineSchema({
     syncedAt: v.number(),
   })
     .index('by_provider_modelId', ['providerId', 'modelId'])
-    .index('by_provider_enabled', ['providerId', 'enabled', 'releaseDate'])
+    .index('by_provider_enabled_releaseDate', [
+      'providerId',
+      'enabled',
+      'releaseDate',
+    ])
     .index('by_modelId', ['modelId']),
 
   // A singleton. Before an Admin saves it, the defaults in settings.ts apply.
