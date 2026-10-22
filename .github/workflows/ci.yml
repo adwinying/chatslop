@@ -58,7 +58,6 @@ jobs:
   image:
     name: Image
     needs: [check, e2e]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -97,6 +96,7 @@ jobs:
         run: docker logs chatslop
 
       - name: Push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push --all-tags "$IMAGE"
