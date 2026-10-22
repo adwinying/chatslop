@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "convex dev --local-backend-version precompiled-2026-10-10-72ce13c --start 'vite dev'",
-    "seed": "convex init && convex env set --force --from-file dev.env && convex run --push seed:firstAdmin",
+    "seed": "convex init && node --env-file-if-exists=.env.local scripts/assert-local-deployment.js && convex env set --force --from-file dev.env && convex run --push seed:firstAdmin",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
     "lint": "oxlint --type-aware --deny-warnings && oxfmt --check",
