@@ -8,24 +8,33 @@ import { releasedSince } from '@/convex/listing'
 import { titleModelId } from '@/convex/settings'
 import { requireAdmin } from '@/convex/users'
 
-/** Every Model, by Provider in creation order, then newest first. */
-async function allModels(ctx: QueryCtx) {
+/** Per Provider in creation order, the Models `select` picks. */
+async function byProvider(
+  ctx: QueryCtx,
+  select: (providerId: Id<'providers'>) => Promise<Doc<'models'>[]>,
+) {
   const providers = await ctx.db.query('providers').take(100)
-  const perProvider = await Promise.all(
-    providers.map(async (provider) => {
-      const models = await ctx.db
-        .query('models')
-        .withIndex('by_provider_modelId', (q) =>
-          q.eq('providerId', provider._id),
-        )
-        .take(500)
-      return models.toSorted((a, b) =>
-        b.releaseDate.localeCompare(a.releaseDate),
-      )
-    }),
-  )
+  const perProvider = await Promise.all(providers.map((p) => select(p._id)))
   return perProvider.flat()
 }
+
+/** A Provider's enabled or disabled Models released from `from`, newest first. */
+const modelsOf = (
+  ctx: QueryCtx,
+  providerId: Id<'providers'>,
+  enabled: boolean,
+  from = '',
+) =>
+  ctx.db
+    .query('models')
+    .withIndex('by_provider_enabled', (q) =>
+      q
+        .eq('providerId', providerId)
+        .eq('enabled', enabled)
+        .gte('releaseDate', from),
+    )
+    .order('desc')
+    .take(500)
 
 /** Whether a Message, a Live answer or the Title Model setting points at the Model. */
 export async function inUse(ctx: QueryCtx, modelId: Id<'models'>) {
@@ -62,7 +71,9 @@ export const options = query({
   handler: async (ctx) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user) return null
-    const models = await allModels(ctx)
+    const models = await byProvider(ctx, (providerId) =>
+      modelsOf(ctx, providerId, true),
+    )
     return models
       .filter((m) => canUse(m, user.role === 'admin'))
       .map(({ _id, providerId, modelId, name, reasoningLevels }) => ({
@@ -84,11 +95,26 @@ export const list = query({
   handler: async (ctx, { since }) => {
     await requireAdmin(ctx)
     const titleId = await titleModelId(ctx)
-    const models = await allModels(ctx)
-    return models.filter(
-      (m) =>
-        m.enabled || m._id === titleId || releasedSince(m.releaseDate, since),
-    )
+    const title = titleId && (await ctx.db.get('models', titleId))
+    return byProvider(ctx, async (providerId) => {
+      const [enabled, disabled] = await Promise.all([
+        modelsOf(ctx, providerId, true),
+        // The month prefix keeps month-only dates; `releasedSince` trims the rest.
+        modelsOf(ctx, providerId, false, since.slice(0, 7)),
+      ])
+      const models = [
+        ...enabled,
+        ...disabled.filter((m) => releasedSince(m.releaseDate, since)),
+      ]
+      if (
+        title?.providerId === providerId &&
+        !models.some((m) => m._id === title._id)
+      )
+        models.push(title)
+      return models.toSorted((a, b) =>
+        b.releaseDate.localeCompare(a.releaseDate),
+      )
+    })
   },
 })
 

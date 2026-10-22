@@ -1,3 +1,4 @@
+import type { Id } from '@/convex/_generated/dataModel'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { api } from '@/convex/_generated/api'
 import { listedSince } from '@/convex/listing'
@@ -16,6 +17,26 @@ const providerNamed = (t: Test, name: string) =>
   t.run(async (ctx) => {
     const providers = await ctx.db.query('providers').take(10)
     return providers.find((p) => p.name === name)!
+  })
+
+/** 500 old, disabled Models that sort before the real ones by `modelId`. */
+const bury = (t: Test, providerId: Id<'providers'>) =>
+  t.run(async (ctx) => {
+    for (let i = 0; i < 500; i++)
+      await ctx.db.insert('models', {
+        providerId,
+        modelId: `a-${String(i).padStart(3, '0')}`,
+        name: `A ${i}`,
+        family: '',
+        releaseDate: '2020-01-01',
+        reasoningLevels: [],
+        attachmentTypes: [],
+        contextLimit: 0,
+        outputLimit: 0,
+        enabled: false,
+        adminOnly: false,
+        syncedAt: 0,
+      })
   })
 
 // Keeps the scheduled Answer from running on its own.
@@ -94,6 +115,7 @@ describe('providers', () => {
     await syncModels(t)
     const { as } = await signInAdmin(t)
     const codex = await providerNamed(t, 'Codex')
+    await bury(t, codex._id)
     const sol = await modelOf(t, 'gpt-6.1-sol')
     await as.mutation(api.threads.send, { text: 'Hi', modelId: sol._id })
 
@@ -134,6 +156,7 @@ describe('models', () => {
     await syncModels(t)
     const { as: user } = await signInUser(t)
     const { as: admin } = await signInAdmin(t)
+    await bury(t, (await providerNamed(t, 'Codex'))._id)
     const luna = await modelOf(t, 'gpt-6-luna')
     const sol = await modelOf(t, 'gpt-6.1-sol')
     await admin.mutation(api.models.update, {
@@ -172,6 +195,7 @@ describe('models', () => {
     const t = setup()
     await syncModels(t)
     const { as } = await signInAdmin(t)
+    await bury(t, (await providerNamed(t, 'Codex'))._id)
     const old = '2020-01-01'
     for (const modelId of ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-5.6']) {
       const model = await modelOf(t, modelId)

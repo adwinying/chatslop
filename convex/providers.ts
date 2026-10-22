@@ -49,20 +49,23 @@ function isHttpUrl(value: string) {
   }
 }
 
-/** Deletes the Provider and its Models, unless any of them is in use. */
+/**
+ * Deletes the Provider and every one of its Models, unless any is in use.
+ * Unbounded on purpose: a throw, or a scan past the transaction limits,
+ * rolls the whole deletion back.
+ */
 export const remove = mutation({
   args: { providerId: v.id('providers') },
   handler: async (ctx, { providerId }) => {
     await requireAdmin(ctx)
-    const models = await ctx.db
+    const models = ctx.db
       .query('models')
       .withIndex('by_provider_modelId', (q) => q.eq('providerId', providerId))
-      .take(500)
-    for (const model of models) {
+    for await (const model of models) {
       if (await inUse(ctx, model._id))
         throw new ConvexError(`${model.name} is in use, so the Provider stays`)
+      await ctx.db.delete('models', model._id)
     }
-    for (const model of models) await ctx.db.delete('models', model._id)
     await ctx.db.delete('providers', providerId)
   },
 })
