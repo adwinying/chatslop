@@ -1,8 +1,8 @@
-import { useQuery } from "convex/react"
-import { LogOutIcon } from "lucide-react"
-import { api } from "@/convex/_generated/api"
-import { Button } from "~/components/ui/button"
-import { authClient } from "~/lib/auth-client"
+import { useQuery } from 'convex/react'
+import { LogOutIcon } from 'lucide-react'
+import { api } from '@/convex/_generated/api'
+import { Button } from '~/components/ui/button'
+import { authClient } from '~/lib/auth-client'
 
 export function AppSidebar() {
   return (
@@ -38,7 +38,7 @@ function UserFooter() {
       <div className="leading-tight">
         <div>{me?.name}</div>
         <div className="text-xs text-muted-foreground">
-          {me && (me.role === "admin" ? "Admin" : "User")}
+          {me && (me.role === 'admin' ? 'Admin' : 'User')}
         </div>
       </div>
       <Button
