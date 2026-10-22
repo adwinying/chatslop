@@ -1,7 +1,7 @@
 import { MockLanguageModelV4 } from 'ai/test'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { api, internal } from '@/convex/_generated/api'
-import { setup, signInAdmin } from '@/convex/test.setup'
+import { modelOf, setup, signInAdmin, syncModels } from '@/convex/test.setup'
 
 // A Model whose stream drops mid-Answer, like a lost connection.
 vi.mock('@/convex/llm', async (importOriginal) => ({
@@ -33,9 +33,10 @@ afterEach(() => {
 
 test('a stream that fails mid-Answer ends it as an error', async () => {
   const t = setup()
-  await t.mutation(internal.seed.providers, {})
+  await syncModels(t)
   const { as } = await signInAdmin(t)
-  const threadId = await as.mutation(api.threads.send, { text: 'Hi' })
+  const { _id: modelId } = await modelOf(t, 'gpt-6.1-sol')
+  const threadId = await as.mutation(api.threads.send, { text: 'Hi', modelId })
   const live = await as.query(api.liveAnswers.get, { threadId })
 
   await t.action(internal.answer.run, { liveAnswerId: live!._id })

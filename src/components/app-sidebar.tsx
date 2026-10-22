@@ -1,7 +1,8 @@
+import { Link } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
-import { LogOutIcon } from 'lucide-react'
+import { LogOutIcon, SettingsIcon } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
-import { Button } from '~/components/ui/button'
+import { Button, buttonVariants } from '~/components/ui/button'
 import { authClient } from '~/lib/auth-client'
 
 export function AppSidebar() {
@@ -41,15 +42,25 @@ function UserFooter() {
           {me && (me.role === 'admin' ? 'Admin' : 'User')}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="ml-auto"
-        aria-label="Log out"
-        onClick={signOut}
-      >
-        <LogOutIcon />
-      </Button>
+      <div className="ml-auto flex">
+        {me?.role === 'admin' && (
+          <Link
+            to="/admin"
+            aria-label="Admin"
+            className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+          >
+            <SettingsIcon />
+          </Link>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Log out"
+          onClick={signOut}
+        >
+          <LogOutIcon />
+        </Button>
+      </div>
     </div>
   )
 }

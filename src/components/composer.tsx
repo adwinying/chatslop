@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { ArrowUpIcon, SquareIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '~/components/ui/button'
@@ -6,10 +6,13 @@ import { Button } from '~/components/ui/button'
 /** Plain textarea with Send, which becomes Stop while the Answer streams. */
 export function Composer({
   streaming,
+  controls,
   onSend,
   onStop,
 }: {
   streaming: boolean
+  /** Pickers shown left of Send. */
+  controls?: ReactNode
   onSend: (text: string) => Promise<unknown>
   onStop: () => void
 }) {
@@ -58,9 +61,10 @@ export function Composer({
         onKeyDown={onKeyDown}
         className="w-full resize-none bg-transparent px-2 py-2 outline-none placeholder:text-muted-foreground"
       />
-      <div className="flex items-center justify-end gap-2 px-1">
+      <div className="flex items-center gap-2 px-1">
+        {controls}
         {error && (
-          <p role="alert" className="mr-auto text-xs text-destructive">
+          <p role="alert" className="text-xs text-destructive">
             {error}
           </p>
         )}
@@ -69,6 +73,7 @@ export function Composer({
             type="button"
             size="icon-lg"
             aria-label="Stop"
+            className="ml-auto"
             onClick={onStop}
           >
             <SquareIcon fill="currentColor" />
@@ -78,6 +83,7 @@ export function Composer({
             type="submit"
             size="icon-lg"
             aria-label="Send"
+            className="ml-auto"
             disabled={!canSend}
           >
             <ArrowUpIcon />

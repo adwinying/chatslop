@@ -2,6 +2,7 @@ import type { Id } from '@/convex/_generated/dataModel'
 import type { Part } from '@/convex/parts'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
+import { useState } from 'react'
 import { api } from '@/convex/_generated/api'
 import { Answer } from '~/components/answer'
 import { AppSidebar } from '~/components/app-sidebar'
@@ -15,6 +16,10 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const live = useQuery(api.liveAnswers.get, args)
   const send = useMutation(api.threads.send)
   const stop = useMutation(api.threads.stop)
+  const models = useQuery(api.models.options)
+  const [pickedId, setPickedId] = useState<Id<'models'>>()
+  // Until the Model picker lands, a pick that goes away falls back to the first Model.
+  const model = models?.find((m) => m._id === pickedId) ?? models?.[0]
 
   return (
     <div className="flex h-dvh">
@@ -41,8 +46,28 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
         <div className="absolute inset-x-0 bottom-0 px-2 sm:px-4">
           <Composer
             streaming={!!live}
+            controls={
+              <select
+                aria-label="Model"
+                value={model?._id ?? ''}
+                onChange={(event) =>
+                  setPickedId(
+                    models?.find((m) => m._id === event.target.value)?._id,
+                  )
+                }
+                className="rounded-md bg-transparent px-2 py-1 text-xs text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30"
+              >
+                {models?.length === 0 && <option value="">No Models</option>}
+                {models?.map((m) => (
+                  <option key={m._id} value={m._id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            }
             onSend={async (text) => {
-              const id = await send({ threadId, text })
+              if (!model) throw new Error('No Model to send with')
+              const id = await send({ threadId, text, modelId: model._id })
               if (!threadId)
                 await navigate({
                   to: '/chat/$threadId',

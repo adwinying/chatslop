@@ -2,7 +2,13 @@ import type { Id } from '@/convex/_generated/dataModel'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { api, internal } from '@/convex/_generated/api'
 import { STALE_MS } from '@/convex/liveAnswers'
-import { setup, signInAdmin, type Test } from '@/convex/test.setup'
+import {
+  modelOf,
+  setup,
+  signInAdmin,
+  syncModels,
+  type Test,
+} from '@/convex/test.setup'
 
 const answerParts = [
   { type: 'reasoning' as const, text: 'Hmm.', state: 'done' as const },
@@ -11,10 +17,14 @@ const answerParts = [
 
 async function sendFirstPrompt() {
   const t = setup()
-  await t.mutation(internal.seed.providers, {})
+  await syncModels(t)
   const { as, userId } = await signInAdmin(t)
-  const threadId = await as.mutation(api.threads.send, { text: ' Hello ' })
-  return { t, as, userId, threadId }
+  const { _id: modelId } = await modelOf(t, 'gpt-6.1-sol')
+  const threadId = await as.mutation(api.threads.send, {
+    text: ' Hello ',
+    modelId,
+  })
+  return { t, as, userId, threadId, modelId }
 }
 
 const liveAnswerOf = (t: Test, threadId: Id<'threads'>) =>
@@ -64,22 +74,22 @@ describe('threads.send', () => {
   })
 
   test('rejects a second Prompt while the Live answer streams', async () => {
-    const { t, as, threadId } = await sendFirstPrompt()
+    const { t, as, threadId, modelId } = await sendFirstPrompt()
 
     await expect(
-      as.mutation(api.threads.send, { threadId, text: 'Again' }),
+      as.mutation(api.threads.send, { threadId, text: 'Again', modelId }),
     ).rejects.toThrow('Wait for the Answer or stop it first')
     expect(await messagesOf(t, threadId)).toHaveLength(1)
   })
 
   test("refuses another User's Thread", async () => {
-    const { t, as, threadId } = await sendFirstPrompt()
+    const { t, as, threadId, modelId } = await sendFirstPrompt()
     await t.run((ctx) =>
       ctx.db.patch('threads', threadId, { userId: 'someone-else' }),
     )
 
     await expect(
-      as.mutation(api.threads.send, { threadId, text: 'Hi' }),
+      as.mutation(api.threads.send, { threadId, text: 'Hi', modelId }),
     ).rejects.toThrow('Thread not found')
     await expect(as.query(api.threads.messages, { threadId })).rejects.toThrow(
       'Thread not found',
@@ -100,7 +110,7 @@ describe('threads.send', () => {
 
 describe('liveAnswers.finish', () => {
   test('inserts the Answer and deletes the Live answer together', async () => {
-    const { t, as, threadId } = await sendFirstPrompt()
+    const { t, as, threadId, modelId } = await sendFirstPrompt()
     const live = await liveAnswerOf(t, threadId)
 
     await t.mutation(internal.liveAnswers.finish, {
@@ -121,7 +131,7 @@ describe('liveAnswers.finish', () => {
       },
     ])
     // The Thread takes Prompts again.
-    await as.mutation(api.threads.send, { threadId, text: 'Next' })
+    await as.mutation(api.threads.send, { threadId, text: 'Next', modelId })
   })
 
   test('marks a stopped Answer as stopped', async () => {

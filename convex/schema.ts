@@ -51,10 +51,19 @@ export default defineSchema({
     releaseDate: v.string(),
     reasoningLevels: v.array(v.string()),
     attachmentTypes: v.array(v.union(v.literal('image'), v.literal('pdf'))),
+    contextLimit: v.number(),
+    outputLimit: v.number(),
     enabled: v.boolean(),
     adminOnly: v.boolean(),
     syncedAt: v.number(),
-  }).index('by_provider_modelId', ['providerId', 'modelId']),
+  })
+    .index('by_provider_modelId', ['providerId', 'modelId'])
+    .index('by_modelId', ['modelId']),
+
+  // A singleton. Before an Admin saves it, the defaults in settings.ts apply.
+  settings: defineTable({
+    titleModelId: v.id('models'),
+  }),
 
   threads: defineTable({
     userId: v.string(),
@@ -113,5 +122,6 @@ export default defineSchema({
     lastWriteAt: v.number(),
   })
     .index('by_thread', ['threadId'])
-    .index('by_user', ['userId']),
+    .index('by_user', ['userId'])
+    .index('by_model', ['modelId']),
 })

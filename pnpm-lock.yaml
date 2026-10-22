@@ -190,6 +190,9 @@ importers:
       '@fontsource/biz-udpgothic':
         specifier: 5.3.0
         version: 5.3.0
+      '@opencode-ai/models':
+        specifier: 0.0.111
+        version: 0.0.111
       '@streamdown/cjk':
         specifier: 1.0.4
         version: 1.0.4(@types/mdast@4.0.4)(micromark-util-types@2.0.3)(micromark@4.0.3)(react@19.3.1)(unified@11.0.5)
@@ -1010,6 +1013,15 @@ packages:
   '@oozcitak/util@10.0.0':
     resolution: {integrity: sha512-hAX0pT/73190NLqBPPWSdBVGtbY6VOhWYK3qqHqtXQ1gK7kS2yz4+ivsN07hpJ6I3aeMtKP6J6npsEKOAzuTLA==}
     engines: {node: '>=20.0'}
+
+  '@opencode-ai/models@0.0.111':
+    resolution: {integrity: sha512-F8JQWRl7lGWu0A7pd5OriP475b2Uq+I7sGrAcCP5+P9R26JUk5qugVTHaJhXSCsHliQzW1vaUVVII5yIuA2Ryw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      effect: 4.0.0-beta.83
+    peerDependenciesMeta:
+      effect:
+        optional: true
 
   '@opentelemetry/semantic-conventions@1.43.0':
     resolution: {integrity: sha512-eSYWTm620tTk45EKSedaUL8MFYI8hW164hIXsgIHyxu3VobUB3fFCu5t0hQby6OoWRPsG1KkKUG2M5UadiLiVg==}
@@ -5204,6 +5216,8 @@ snapshots:
       '@oozcitak/util': 10.0.0
 
   '@oozcitak/util@10.0.0': {}
+
+  '@opencode-ai/models@0.0.111': {}
 
   '@opentelemetry/semantic-conventions@1.43.0': {}
 

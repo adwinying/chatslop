@@ -1,3 +1,5 @@
+import type { QueryCtx } from '@/convex/_generated/server'
+import { ConvexError } from 'convex/values'
 import { query } from '@/convex/_generated/server'
 import { authComponent } from '@/convex/auth'
 
@@ -14,3 +16,10 @@ export const me = query({
     }
   },
 })
+
+/** The signed-in Admin. Throws for anyone else. */
+export async function requireAdmin(ctx: QueryCtx) {
+  const user = await authComponent.getAuthUser(ctx)
+  if (user.role !== 'admin') throw new ConvexError('Admins only')
+  return user
+}
