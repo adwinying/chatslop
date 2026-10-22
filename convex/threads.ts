@@ -1,6 +1,9 @@
 import type { Id } from '@/convex/_generated/dataModel'
 import type { QueryCtx } from '@/convex/_generated/server'
-import { paginationOptsValidator } from 'convex/server'
+import {
+  paginationOptsValidator,
+  paginationResultValidator,
+} from 'convex/server'
 import { ConvexError, v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
 import { mutation, query } from '@/convex/_generated/server'
@@ -9,13 +12,12 @@ import { deleteThread } from '@/convex/cascade'
 import { STALE_MS } from '@/convex/liveAnswers'
 import { usableModel } from '@/convex/models'
 import { reasoningLevelFor } from '@/convex/reasoning'
+import schema from '@/convex/schema'
 import { updateSettings } from '@/convex/userSettings'
 
 /** Messages per Thread that the view shows and the Context holds, newest kept. */
 export const MAX_MESSAGES = 500
 export const TITLE_LENGTH = 80
-/** A product limit, so the Pinned list loads in one query. */
-export const MAX_PINNED = 50
 
 export const liveAnswerOf = (ctx: QueryCtx, threadId: Id<'threads'>) =>
   ctx.db
@@ -168,6 +170,10 @@ export const stop = mutation({
 /** The Thread's header: title and pin. Null once deleted or while signed out. */
 export const get = query({
   args: { threadId: v.id('threads') },
+  returns: v.union(
+    v.null(),
+    schema.doc('threads').pick('_id', 'title', 'titlePending', 'pinned'),
+  ),
   handler: async (ctx, { threadId }) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     const thread = await ctx.db.get('threads', threadId)
@@ -185,19 +191,21 @@ const byLastMessage = (ctx: QueryCtx, userId: string, pinned: boolean) =>
     )
     .order('desc')
 
-/** The User's pinned Threads, newest first. Empty while signed out. */
+/** All the User's pinned Threads, newest first, unpaginated (#10). Empty while signed out. */
 export const pinned = query({
   args: {},
+  returns: v.array(schema.doc('threads')),
   handler: async (ctx) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user) return []
-    return await byLastMessage(ctx, user._id, true).take(MAX_PINNED)
+    return await byLastMessage(ctx, user._id, true).collect()
   },
 })
 
 /** The User's other Threads, newest first, a page at a time. */
 export const list = query({
   args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(schema.doc('threads')),
   handler: async (ctx, { paginationOpts }) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user) return { page: [], isDone: true, continueCursor: '' }
@@ -208,39 +216,36 @@ export const list = query({
 /** Renames the Thread, so the Title Model's title no longer lands. */
 export const rename = mutation({
   args: { threadId: v.id('threads'), title: v.string() },
+  returns: v.null(),
   handler: async (ctx, { threadId, ...args }) => {
     const user = await authComponent.getAuthUser(ctx)
     await ownThread(ctx, threadId, user._id)
     const title = args.title.trim().slice(0, TITLE_LENGTH)
     if (!title) throw new ConvexError('Write a title first')
     await ctx.db.patch('threads', threadId, { title, titlePending: false })
+    return null
   },
 })
 
 export const setPinned = mutation({
   args: { threadId: v.id('threads'), pinned: v.boolean() },
+  returns: v.null(),
   handler: async (ctx, { threadId, ...fields }) => {
     const user = await authComponent.getAuthUser(ctx)
-    const thread = await ownThread(ctx, threadId, user._id)
-    if (fields.pinned && !thread.pinned) {
-      const pinnedThreads = await byLastMessage(ctx, user._id, true).take(
-        MAX_PINNED,
-      )
-      if (pinnedThreads.length >= MAX_PINNED)
-        throw new ConvexError(
-          `You can pin at most ${MAX_PINNED} Threads. Unpin one first.`,
-        )
-    }
+    await ownThread(ctx, threadId, user._id)
     await ctx.db.patch('threads', threadId, fields)
+    return null
   },
 })
 
 /** Deletes the Thread, stopping its Live answer, with everything in it. */
 export const remove = mutation({
   args: { threadId: v.id('threads') },
+  returns: v.null(),
   handler: async (ctx, { threadId }) => {
     const user = await authComponent.getAuthUser(ctx)
     await ownThread(ctx, threadId, user._id)
     await deleteThread(ctx, threadId)
+    return null
   },
 })

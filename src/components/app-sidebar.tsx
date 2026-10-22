@@ -1,8 +1,22 @@
 import type { Doc } from '@/convex/_generated/dataModel'
-import { Link } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
+import { Link, useLocation } from '@tanstack/react-router'
 import { usePaginatedQuery, useQuery } from 'convex/react'
-import { Loader2Icon, LogOutIcon, SettingsIcon } from 'lucide-react'
-import { useState } from 'react'
+import {
+  Loader2Icon,
+  LogOutIcon,
+  MenuIcon,
+  SettingsIcon,
+  XIcon,
+} from 'lucide-react'
+import {
+  createContext,
+  use,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from 'react'
 import { api } from '@/convex/_generated/api'
 import {
   DeleteButton,
@@ -16,14 +30,63 @@ import { cn } from '~/lib/utils'
 
 const PAGE_SIZE = 50
 
+const OpenSidebar = createContext<(opener: HTMLElement) => void>(() => {})
+
+/**
+ * The sidebar beside every signed-in page. It stays mounted across
+ * navigation, and on phones its overlay closes when the page changes.
+ */
+export function AppShell({ children }: { children: ReactNode }) {
+  const path = useLocation({ select: (location) => location.pathname })
+  const [opened, setOpened] = useState<{ opener: HTMLElement; path: string }>()
+  const close = () => {
+    opened?.opener.focus()
+    setOpened(undefined)
+  }
+
+  return (
+    <OpenSidebar value={(opener) => setOpened({ opener, path })}>
+      <div className="flex h-dvh">
+        <AppSidebar open={opened?.path === path} onClose={close} />
+        {children}
+      </div>
+    </OpenSidebar>
+  )
+}
+
+/** Opens the sidebar on phones. */
+export function SidebarButton() {
+  const open = use(OpenSidebar)
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-lg"
+      aria-label="Open sidebar"
+      className="md:hidden"
+      onClick={(event) => open(event.currentTarget)}
+    >
+      <MenuIcon />
+    </Button>
+  )
+}
+
 /** Persistent from `md` up; an overlay on phones while `open`. */
-export function AppSidebar({
-  open = false,
-  onClose,
-}: {
-  open?: boolean
-  onClose?: () => void
-}) {
+function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const closeButton = useRef<HTMLButtonElement>(null)
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (open && event.key === 'Escape') onClose()
+  })
+
+  useEffect(() => {
+    if (open) closeButton.current?.focus()
+  }, [open])
+
+  useEffect(() => {
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   return (
     <>
       {open && (
@@ -39,8 +102,18 @@ export function AppSidebar({
           open ? 'flex' : 'hidden',
         )}
       >
-        <div className="px-3 pt-4 pb-2 text-center font-semibold tracking-tight">
+        <div className="relative px-3 pt-4 pb-2 text-center font-semibold tracking-tight">
           chatslop
+          <Button
+            ref={closeButton}
+            variant="ghost"
+            size="icon-lg"
+            aria-label="Close sidebar"
+            className="absolute top-2.5 right-2 md:hidden"
+            onClick={onClose}
+          >
+            <XIcon />
+          </Button>
         </div>
         <div className="px-3">
           <Link
@@ -66,11 +139,9 @@ function ThreadList() {
     { initialNumItems: PAGE_SIZE },
   )
   const live = new Set(useQuery(api.liveAnswers.threadIds))
-  // Groups by the day the sidebar mounted; a reload moves them on.
-  const [now] = useState(() => Date.now())
   const groups = [
     { label: 'Pinned', threads: pinned ?? [] },
-    ...dateGroups(results, now),
+    ...dateGroups(results, useToday()),
   ]
 
   return (
@@ -111,6 +182,17 @@ function ThreadList() {
 }
 
 const DAY = 86_400_000
+const startOfToday = () => new Date().setHours(0, 0, 0, 0)
+
+/** The start of the local day, moving on at midnight and when a sleeping tab wakes. */
+function useToday() {
+  const [today, setToday] = useState(startOfToday)
+  useEffect(() => {
+    const timer = setInterval(() => setToday(startOfToday()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+  return today
+}
 
 /** Today, Yesterday, Last 7 days, Last 30 days, then Older, by local day; empty groups included. */
 export function dateGroups<T extends { lastMessageAt: number }>(

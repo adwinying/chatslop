@@ -57,6 +57,8 @@ export function TitleInput({
       onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur()
         if (event.key === 'Escape') {
+          // Leaves the phone sidebar open.
+          event.stopPropagation()
           cancelled.current = true
           onDone()
         }

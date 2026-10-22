@@ -3,12 +3,11 @@ import type { Part } from '@/convex/parts'
 import type { FunctionReturnType } from 'convex/server'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { MenuIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import { Answer } from '~/components/answer'
-import { AppSidebar } from '~/components/app-sidebar'
+import { SidebarButton } from '~/components/app-sidebar'
 import {
   Composer,
   MESSAGE_ID,
@@ -21,7 +20,6 @@ import {
   PinButton,
   TitleInput,
 } from '~/components/thread-actions'
-import { Button } from '~/components/ui/button'
 import { draftKey, useDraft } from '~/lib/draft'
 import { cn } from '~/lib/utils'
 
@@ -37,7 +35,6 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const { options, model } = choices
   const me = useQuery(api.users.me)
   const draft = me ? draftKey(me.id, threadId) : undefined
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   const thread = useQuery(api.threads.get, args)
   const deleted = !!threadId && thread === null && !!me
 
@@ -47,112 +44,99 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   }, [deleted, navigate])
 
   return (
-    <div className="flex h-dvh">
-      <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <main className="relative flex min-w-0 flex-1 flex-col">
-        <ThreadHeader thread={thread} onMenu={() => setSidebarOpen(true)} />
-        {/* Reversed, so the view stays pinned to the newest text as it streams. */}
-        <div className="flex flex-1 flex-col-reverse overflow-y-auto px-4 pb-40">
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-8">
-            {!threadId && me && (
-              <Greeting name={me.name} draft={draftKey(me.id)} />
-            )}
-            {messages?.map((message) =>
-              message.role === 'user' ? (
-                <Prompt key={message._id} parts={message.parts} />
-              ) : (
-                <Answer
-                  key={message._id}
-                  parts={message.parts}
-                  status={message.status}
-                  error={message.error}
-                  made={message}
+    <main className="relative flex min-w-0 flex-1 flex-col">
+      <ThreadHeader thread={thread} />
+      {/* Reversed, so the view stays pinned to the newest text as it streams. */}
+      <div className="flex flex-1 flex-col-reverse overflow-y-auto px-4 pb-40">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-8">
+          {!threadId && me && (
+            <Greeting name={me.name} draft={draftKey(me.id)} />
+          )}
+          {messages?.map((message) =>
+            message.role === 'user' ? (
+              <Prompt key={message._id} parts={message.parts} />
+            ) : (
+              <Answer
+                key={message._id}
+                parts={message.parts}
+                status={message.status}
+                error={message.error}
+                made={message}
+              />
+            ),
+          )}
+          {live && <Answer parts={live.parts} streaming />}
+        </div>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 px-2 sm:px-4">
+        <Composer
+          draftKey={draft}
+          streaming={!!live}
+          blockReason={
+            options === undefined
+              ? 'Loading Models…'
+              : model
+                ? undefined
+                : 'No Model to send with. Ask an Admin to enable one.'
+          }
+          controls={
+            options &&
+            model && (
+              <>
+                <ModelPicker
+                  options={options}
+                  model={model}
+                  onPick={(modelId) => choices.pick({ modelId })}
                 />
-              ),
-            )}
-            {live && <Answer parts={live.parts} streaming />}
-          </div>
-        </div>
-        <div className="absolute inset-x-0 bottom-0 px-2 sm:px-4">
-          <Composer
-            draftKey={draft}
-            streaming={!!live}
-            blockReason={
-              options === undefined
-                ? 'Loading Models…'
-                : model
-                  ? undefined
-                  : 'No Model to send with. Ask an Admin to enable one.'
-            }
-            controls={
-              options &&
-              model && (
-                <>
-                  <ModelPicker
-                    options={options}
-                    model={model}
-                    onPick={(modelId) => choices.pick({ modelId })}
+                {choices.reasoningLevel && (
+                  <ReasoningSelect
+                    levels={model.reasoningLevels}
+                    value={choices.reasoningLevel}
+                    onChange={(reasoningLevel) =>
+                      choices.pick({ reasoningLevel })
+                    }
                   />
-                  {choices.reasoningLevel && (
-                    <ReasoningSelect
-                      levels={model.reasoningLevels}
-                      value={choices.reasoningLevel}
-                      onChange={(reasoningLevel) =>
-                        choices.pick({ reasoningLevel })
-                      }
-                    />
-                  )}
-                  <WebSearchToggle
-                    on={choices.webSearch}
-                    onChange={(webSearch) => choices.pick({ webSearch })}
-                  />
-                </>
-              )
-            }
-            onSend={async (text) => {
-              if (!model) return
-              const id = await send({
-                threadId,
-                text,
-                modelId: model._id,
-                reasoningLevel: choices.reasoningLevel,
-                webSearch: choices.webSearch,
+                )}
+                <WebSearchToggle
+                  on={choices.webSearch}
+                  onChange={(webSearch) => choices.pick({ webSearch })}
+                />
+              </>
+            )
+          }
+          onSend={async (text) => {
+            if (!model) return
+            const id = await send({
+              threadId,
+              text,
+              modelId: model._id,
+              reasoningLevel: choices.reasoningLevel,
+              webSearch: choices.webSearch,
+            })
+            if (!threadId)
+              await navigate({
+                to: '/chat/$threadId',
+                params: { threadId: id },
               })
-              if (!threadId)
-                await navigate({
-                  to: '/chat/$threadId',
-                  params: { threadId: id },
-                })
-            }}
-            onStop={() => threadId && void stop({ threadId })}
-          />
-        </div>
-      </main>
-    </div>
+          }}
+          onStop={() => threadId && void stop({ threadId })}
+        />
+      </div>
+    </main>
   )
 }
 
 /** The sidebar button on phones, then the open Thread's title (click to rename), pin and delete. */
 function ThreadHeader({
   thread,
-  onMenu,
 }: {
   thread?: FunctionReturnType<typeof api.threads.get>
-  onMenu: () => void
 }) {
   const [renaming, setRenaming] = useState(false)
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 px-2">
-      <Button
-        variant="ghost"
-        size="icon-lg"
-        aria-label="Open sidebar"
-        className="md:hidden"
-        onClick={onMenu}
-      >
-        <MenuIcon />
-      </Button>
+      <SidebarButton />
       {thread &&
         (renaming ? (
           <TitleInput

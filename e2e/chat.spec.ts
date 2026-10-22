@@ -109,6 +109,15 @@ test('a new Thread gets its title, then is renamed, pinned and deleted', async (
     threads.getByRole('region', { name: 'Pinned' }).getByText(name),
   ).toBeVisible()
 
+  // The sidebar outlives navigation, so a double-click renames a closed Thread.
+  await page.getByRole('link', { name: 'New Chat' }).click()
+  await expect(page).toHaveURL('/')
+  const renamed = `${name} again`
+  await threads.getByRole('link', { name }).dblclick()
+  await threads.getByLabel('Title').fill(renamed)
+  await threads.getByLabel('Title').press('Enter')
+  await expect(header.getByRole('button', { name: renamed })).toBeVisible()
+
   // Mid-Answer, so the delete stops the Live answer too.
   await header.getByRole('button', { name: 'Delete' }).click()
   await page
@@ -117,4 +126,23 @@ test('a new Thread gets its title, then is renamed, pinned and deleted', async (
     .click()
   await expect(page).toHaveURL('/')
   await expect(threads.getByText(name)).toHaveCount(0)
+})
+
+test('the phone sidebar closes with Escape and returns focus', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  await logIn(page)
+  const menu = page.getByRole('button', { name: 'Open sidebar' })
+  const threads = page.getByRole('navigation', { name: 'Threads' })
+
+  await menu.click()
+  await expect(threads).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Close sidebar' }),
+  ).toBeFocused()
+  await page.keyboard.press('Escape')
+
+  await expect(threads).toBeHidden()
+  await expect(menu).toBeFocused()
 })

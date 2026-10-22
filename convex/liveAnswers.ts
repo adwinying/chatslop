@@ -32,6 +32,7 @@ export const get = query({
 /** The User's Threads with a Live answer, for the sidebar's spinners. Empty while signed out. */
 export const threadIds = query({
   args: {},
+  returns: v.array(v.id('threads')),
   handler: async (ctx) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user) return []
