@@ -4,7 +4,13 @@ import type { Part } from '@/convex/parts'
 import type { FunctionReturnType } from 'convex/server'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { type DragEvent, type ReactNode, useEffect, useState } from 'react'
+import {
+  type DragEvent,
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useState,
+} from 'react'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
@@ -64,7 +70,8 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const deleted = !!threadId && thread === null && !!me
   const regenerate = useMutation(api.threads.regenerate)
   const edit = useMutation(api.threads.edit)
-  const lastAnswerId = messages?.findLast((m) => m.role === 'assistant')?._id
+  const lastAnswer = messages?.findLast((m) => m.role === 'assistant')
+  const lastAnswerId = lastAnswer?._id
   const intake = useIntake(useDraftAttachments(draft), model?.attachmentTypes)
 
   // Another tab deleted it.
@@ -81,55 +88,61 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
           {!threadId && me && (
             <Greeting name={me.name} draft={draftKey(me.id)} />
           )}
-          {messages?.map((message) =>
-            message.role === 'user' ? (
-              <Prompt
-                key={message._id}
-                text={textOf(message.parts)}
-                attachments={message.attachments}
-                readable={model?.attachmentTypes}
-                busy={!!live}
-                canSend={!!model}
-                onSend={(text, attachmentIds) =>
-                  model &&
-                  truncate(() =>
-                    edit({
-                      promptId: message._id,
-                      text,
-                      attachmentIds,
-                      modelId: model._id,
-                      reasoningLevel: choices.reasoningLevel,
-                      webSearch: choices.webSearch,
-                    }),
-                  )
-                }
-              />
-            ) : (
-              <Answer
-                key={message._id}
-                parts={message.parts}
-                status={message.status}
-                error={message.error}
-                made={message}
-                actions={
-                  <AnswerActions
-                    text={textOf(message.parts)}
-                    modelId={message.modelId}
-                    options={options}
-                    always={
-                      message._id === lastAnswerId || message.status === 'error'
-                    }
-                    disabled={!!live}
-                    onRegenerate={(modelId) =>
-                      truncate(() =>
-                        regenerate({ answerId: message._id, modelId }),
-                      )
-                    }
-                  />
-                }
-              />
-            ),
-          )}
+          {messages?.map((message) => (
+            <Fragment key={message._id}>
+              {message._id === lastAnswer?.contextStartMessageId && (
+                <p className="flex items-center gap-3 text-xs text-zinc-500 before:h-px before:flex-1 before:bg-zinc-800 after:h-px after:flex-1 after:bg-zinc-800">
+                  Earlier messages weren't sent to the Model
+                </p>
+              )}
+              {message.role === 'user' ? (
+                <Prompt
+                  text={textOf(message.parts)}
+                  attachments={message.attachments}
+                  readable={model?.attachmentTypes}
+                  busy={!!live}
+                  canSend={!!model}
+                  onSend={(text, attachmentIds) =>
+                    model &&
+                    truncate(() =>
+                      edit({
+                        promptId: message._id,
+                        text,
+                        attachmentIds,
+                        modelId: model._id,
+                        reasoningLevel: choices.reasoningLevel,
+                        webSearch: choices.webSearch,
+                      }),
+                    )
+                  }
+                />
+              ) : (
+                <Answer
+                  parts={message.parts}
+                  status={message.status}
+                  error={message.error}
+                  made={message}
+                  actions={
+                    <AnswerActions
+                      text={textOf(message.parts)}
+                      modelId={message.modelId}
+                      options={options}
+                      always={
+                        message._id === lastAnswerId ||
+                        message.status === 'error'
+                      }
+                      disabled={!!live}
+                      onRegenerate={(modelId) =>
+                        truncate(() =>
+                          regenerate({ answerId: message._id, modelId }),
+                        )
+                      }
+                    />
+                  }
+                />
+              )}
+            </Fragment>
+          ))}
           {live && <Answer parts={live.parts} streaming />}
         </div>
       </div>
