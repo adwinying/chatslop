@@ -54,6 +54,28 @@ test('the seeded Admin logs in, sees the shell over /convex, and logs out', asyn
   await expect(page).toHaveURL('/login')
 })
 
+// The allowlist is the security boundary from ADR 0001.
+test('the proxy refuses Convex paths outside the allowlist', async ({
+  page,
+  request,
+}) => {
+  const res = await request.get('/convex/api/check_admin_key')
+  expect(res.status()).toBe(404)
+
+  await page.goto('/login')
+  const opened = await page.evaluate(
+    () =>
+      new Promise<boolean>((resolve) => {
+        const url = new URL('/convex/api/check_admin_key', location.href)
+        url.protocol = 'ws:'
+        const ws = new WebSocket(url)
+        ws.addEventListener('open', () => resolve(true))
+        ws.addEventListener('error', () => resolve(false))
+      }),
+  )
+  expect(opened).toBe(false)
+})
+
 test('a wrong password shows an error', async ({ page }) => {
   await page.goto('/login')
   await page.getByLabel('Username or email').fill(admin.email)
