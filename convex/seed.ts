@@ -42,16 +42,17 @@ export const firstAdmin = internalAction({
 })
 
 /**
- * Creates the Codex and Claude Providers from env vars on first boot, with
- * one hardcoded Model until Model sync lands.
+ * Creates the Codex and Claude Providers on first boot, pointed at the proxy
+ * without a key, and one hardcoded Model until Model sync lands. Admins set
+ * each Provider's base URL and key in /admin.
  */
 export const providers = internalMutation({
   args: {},
   handler: async (ctx) => {
     if (await ctx.db.query('providers').first()) return { created: false }
 
-    const baseUrl = env.PROVIDER_BASE_URL ?? 'http://cli-proxy-api:8317/v1'
-    const apiKey = env.PROVIDER_API_KEY ?? ''
+    const baseUrl = 'http://cli-proxy-api:8317/v1'
+    const apiKey = ''
     const codex = await ctx.db.insert('providers', {
       name: 'Codex',
       apiFormat: 'openai-responses',

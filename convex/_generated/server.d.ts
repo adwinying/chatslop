@@ -35,8 +35,6 @@ type Env = {
   readonly ADMIN_USERNAME: string | undefined;
   readonly BETTER_AUTH_SECRET: string;
   readonly MOCK_MODEL: string | undefined;
-  readonly PROVIDER_API_KEY: string | undefined;
-  readonly PROVIDER_BASE_URL: string | undefined;
   readonly SITE_URL: string;
 };
 

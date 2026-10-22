@@ -15,7 +15,7 @@ KEEP_BACKUPS=7
 # Convex-side env, reapplied on every boot so the env file stays the source of truth.
 CONVEX_ENV=(SITE_URL BETTER_AUTH_SECRET ADMIN_EMAIL ADMIN_USERNAME ADMIN_PASSWORD)
 # Optional; unset ones are removed from Convex too.
-CONVEX_ENV_OPTIONAL=(PROVIDER_BASE_URL PROVIDER_API_KEY MOCK_MODEL)
+CONVEX_ENV_OPTIONAL=(MOCK_MODEL)
 
 for name in "${CONVEX_ENV[@]}"; do
   : "${!name:?$name is required}"
