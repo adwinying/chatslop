@@ -1,9 +1,9 @@
-import { useHydrated } from "@tanstack/react-router"
-import { useState, type FormEvent } from "react"
-import { Button } from "~/components/ui/button"
-import { Input } from "~/components/ui/input"
-import { Label } from "~/components/ui/label"
-import { authClient } from "~/lib/auth-client"
+import { useHydrated } from '@tanstack/react-router'
+import { useState, type FormEvent } from 'react'
+import { Button } from '~/components/ui/button'
+import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
+import { authClient } from '~/lib/auth-client'
 
 /** Username or email + password. Uses no Convex query, so it works signed out. */
 export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
@@ -17,19 +17,19 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
     const form = new FormData(event.currentTarget)
     const field = (name: string) => {
       const value = form.get(name)
-      return typeof value === "string" ? value : ""
+      return typeof value === 'string' ? value : ''
     }
-    const identifier = field("identifier").trim()
-    const password = field("password")
+    const identifier = field('identifier').trim()
+    const password = field('password')
 
     setPending(true)
     setError(null)
-    const result = identifier.includes("@")
+    const result = identifier.includes('@')
       ? await authClient.signIn.email({ email: identifier, password })
       : await authClient.signIn.username({ username: identifier, password })
     setPending(false)
 
-    if (result.error) setError("Wrong username, email or password")
+    if (result.error) setError('Wrong username, email or password')
     else onSuccess()
   }
 

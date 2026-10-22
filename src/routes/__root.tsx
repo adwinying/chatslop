@@ -1,35 +1,35 @@
-import type { ConvexReactClient } from "convex/react"
-import type { ReactNode } from "react"
-import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react"
+import type { ConvexReactClient } from 'convex/react'
+import type { ReactNode } from 'react'
+import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react'
 import {
   createRootRouteWithContext,
   HeadContent,
   Outlet,
   redirect,
   Scripts,
-} from "@tanstack/react-router"
-import { createServerFn } from "@tanstack/react-start"
-import { authClient } from "~/lib/auth-client"
-import { getToken } from "~/lib/auth-server"
-import appCss from "~/styles/app.css?url"
+} from '@tanstack/react-router'
+import { createServerFn } from '@tanstack/react-start'
+import { authClient } from '~/lib/auth-client'
+import { getToken } from '~/lib/auth-server'
+import appCss from '~/styles/app.css?url'
 
-const getAuthToken = createServerFn({ method: "GET" }).handler(() => getToken())
+const getAuthToken = createServerFn({ method: 'GET' }).handler(() => getToken())
 
 export const Route = createRootRouteWithContext<{
   convex: ConvexReactClient
 }>()({
   head: () => ({
     meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "chatslop" },
+      { charSet: 'utf-8' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      { title: 'chatslop' },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [{ rel: 'stylesheet', href: appCss }],
   }),
   beforeLoad: async ({ location }) => {
     const token = (await getAuthToken()) ?? null
-    if (!token && location.pathname !== "/login")
-      throw redirect({ to: "/login" })
+    if (!token && location.pathname !== '/login')
+      throw redirect({ to: '/login' })
     return { token }
   },
   component: RootComponent,

@@ -1,13 +1,13 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
 /* Self-hosted fonts: the deploy is LAN-only, so no Google Fonts or CDN. */
-@import "@fontsource-variable/inter";
-@import "@fontsource/biz-udpgothic/400.css";
-@import "@fontsource/biz-udpgothic/700.css";
-@import "@fontsource-variable/lora";
-@import "@fontsource-variable/noto-serif-jp";
-@import "hack-font/build/web/hack.css";
+@import '@fontsource-variable/inter';
+@import '@fontsource/biz-udpgothic/400.css';
+@import '@fontsource/biz-udpgothic/700.css';
+@import '@fontsource-variable/lora';
+@import '@fontsource-variable/noto-serif-jp';
+@import 'hack-font/build/web/hack.css';
 
 @theme {
   --color-brand-100: #cfe6f1;
@@ -17,10 +17,10 @@
   --color-brand-600: #00597f;
   /* Interface and Prompts. BIZ UDPGothic covers Japanese. */
   --font-sans:
-    "Inter Variable", "BIZ UDPGothic", ui-sans-serif, system-ui, sans-serif;
+    'Inter Variable', 'BIZ UDPGothic', ui-sans-serif, system-ui, sans-serif;
   /* Answers. Noto Serif JP covers Japanese. */
-  --font-serif: "Lora Variable", "Noto Serif JP Variable", ui-serif, serif;
-  --font-mono: "Hack", ui-monospace, monospace;
+  --font-serif: 'Lora Variable', 'Noto Serif JP Variable', ui-serif, serif;
+  --font-mono: 'Hack', ui-monospace, monospace;
 }
 
 @theme inline {

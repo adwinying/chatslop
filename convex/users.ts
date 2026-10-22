@@ -1,5 +1,5 @@
-import { query } from "@/convex/_generated/server"
-import { authComponent } from "@/convex/auth"
+import { query } from '@/convex/_generated/server'
+import { authComponent } from '@/convex/auth'
 
 /** The signed-in User, for the sidebar footer. Null once the session ends, e.g. mid sign-out. */
 export const me = query({
@@ -10,7 +10,7 @@ export const me = query({
     return {
       name: user.name,
       username: user.username ?? null,
-      role: user.role ?? "user",
+      role: user.role ?? 'user',
     }
   },
 })

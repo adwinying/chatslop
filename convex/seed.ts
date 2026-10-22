@@ -1,14 +1,14 @@
-import { components } from "@/convex/_generated/api"
-import { env, internalAction } from "@/convex/_generated/server"
-import { createAuth } from "@/convex/auth"
+import { components } from '@/convex/_generated/api'
+import { env, internalAction } from '@/convex/_generated/server'
+import { createAuth } from '@/convex/auth'
 
 /** Creates the first Admin from env vars. Does nothing once any Admin exists. */
 export const firstAdmin = internalAction({
   args: {},
   handler: async (ctx) => {
     const existing = await ctx.runQuery(components.betterAuth.adapter.findOne, {
-      model: "user",
-      where: [{ field: "role", value: "admin" }],
+      model: 'user',
+      where: [{ field: 'role', value: 'admin' }],
     })
     if (existing) return { created: false }
 
@@ -19,7 +19,7 @@ export const firstAdmin = internalAction({
     } = env
     if (!email || !username || !password) {
       throw new Error(
-        "Set ADMIN_EMAIL, ADMIN_USERNAME and ADMIN_PASSWORD before seeding",
+        'Set ADMIN_EMAIL, ADMIN_USERNAME and ADMIN_PASSWORD before seeding',
       )
     }
     // No headers: Better Auth skips the Admin check for server-side calls.
@@ -28,7 +28,7 @@ export const firstAdmin = internalAction({
         email,
         password,
         name: username,
-        role: "admin",
+        role: 'admin',
         data: { username },
       },
     })

@@ -2,6 +2,10 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "printWidth": 80,
   "semi": false,
+  "singleQuote": true,
+  "tabWidth": 2,
+  "trailingComma": "all",
+  "sortTailwindcss": { "stylesheet": "./src/styles/app.css" },
   "sortImports": {
     "groups": [
       "type",

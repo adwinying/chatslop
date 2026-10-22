@@ -1,7 +1,7 @@
-import { createRouter } from "@tanstack/react-router"
-import { ConvexReactClient } from "convex/react"
-import { convexUrl } from "~/lib/convex-url"
-import { routeTree } from "~/routeTree.gen"
+import { createRouter } from '@tanstack/react-router'
+import { ConvexReactClient } from 'convex/react'
+import { convexUrl } from '~/lib/convex-url'
+import { routeTree } from '~/routeTree.gen'
 
 export function getRouter() {
   // expectAuth holds every Convex call until the token lands, so the shell
@@ -11,12 +11,12 @@ export function getRouter() {
   return createRouter({
     routeTree,
     context: { convex },
-    defaultPreload: "intent",
+    defaultPreload: 'intent',
     scrollRestoration: true,
   })
 }
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
   interface Register {
     router: ReturnType<typeof getRouter>
   }
