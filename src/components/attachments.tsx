@@ -176,10 +176,13 @@ function post(
   file: File,
   onProgress: (progress: number) => void,
 ) {
+  // Convex hands out its canonical URL: the loopback origin in dev, already
+  // under `/convex` in the container. Keep only the `/api/…` part.
   const { pathname, search } = new URL(uploadUrl)
+  const path = pathname.slice(pathname.indexOf('/api/'))
   return new Promise<Id<'_storage'>>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', convexUrl() + pathname + search)
+    xhr.open('POST', convexUrl() + path + search)
     xhr.setRequestHeader('Content-Type', file.type || 'text/plain')
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total)
