@@ -19,6 +19,8 @@ export const authComponent = createClient<DataModel, typeof authSchema>(
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
   ({
     baseURL: env.SITE_URL,
+    // Other origins the app is served on, e.g. the LAN address in dev.
+    trustedOrigins: env.TRUSTED_ORIGINS?.split(',') ?? [],
     secret: env.BETTER_AUTH_SECRET,
     database: authComponent.adapter(ctx),
     // Admins create every account; there is no self-signup.

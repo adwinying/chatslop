@@ -14,6 +14,8 @@ BACKUP_INTERVAL_SECONDS=${BACKUP_INTERVAL_SECONDS:-86400}
 KEEP_BACKUPS=7
 # Convex-side env, reapplied on every boot so the env file stays the source of truth.
 CONVEX_ENV=(SITE_URL BETTER_AUTH_SECRET ADMIN_EMAIL ADMIN_USERNAME ADMIN_PASSWORD)
+# Optional; unset ones are removed from Convex too.
+CONVEX_ENV_OPTIONAL=(TRUSTED_ORIGINS MOCK_MODEL)
 
 for name in "${CONVEX_ENV[@]}"; do
   : "${!name:?$name is required}"
@@ -61,8 +63,16 @@ for name in "${CONVEX_ENV[@]}"; do
   # Through stdin, so the value stays off argv.
   printf '%s' "${!name}" | convex env set "$name"
 done
+for name in "${CONVEX_ENV_OPTIONAL[@]}"; do
+  if [[ -n ${!name:-} ]]; then
+    printf '%s' "${!name}" | convex env set "$name"
+  else
+    convex env remove "$name" >/dev/null
+  fi
+done
 convex deploy --typecheck disable --codegen disable
 convex run seed:firstAdmin
+convex run seed:providers
 
 node .output/server/index.mjs &
 app=$!

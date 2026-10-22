@@ -6,7 +6,8 @@ import { nitro } from 'nitro/vite'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  server: { port: 3000, strictPort: true },
+  // On every interface, for testing from other devices on the LAN.
+  server: { host: true, port: 3000, strictPort: true },
   resolve: { tsconfigPaths: true },
   ssr: { noExternal: ['@convex-dev/better-auth'] },
   plugins: [

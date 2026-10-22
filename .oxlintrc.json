@@ -32,6 +32,8 @@
         ]
       }
     ],
+    // Convex system fields.
+    "no-underscore-dangle": ["warn", { "allow": ["_id", "_creationTime"] }],
     "react/react-in-jsx-scope": "off",
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "warn",
