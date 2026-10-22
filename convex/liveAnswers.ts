@@ -66,6 +66,7 @@ export const context = internalQuery({
         messages
           .filter((m) => m.role === 'user' || m.status !== 'error')
           .map(async ({ _id, role, parts }) => ({
+            _id,
             role,
             parts,
             attachments: role === 'user' ? await attachmentsOf(ctx, _id) : [],
@@ -102,6 +103,7 @@ const outcome = v.object({
   error: v.optional(v.string()),
   usage: v.optional(usageValidator),
   timing: v.optional(timingValidator),
+  contextStartMessageId: v.optional(v.id('messages')),
 })
 
 export const finish = internalMutation({
@@ -140,7 +142,7 @@ export const expire = internalMutation({
 async function finalize(
   ctx: MutationCtx,
   live: Doc<'liveAnswers'>,
-  { parts, error, usage, timing }: Infer<typeof outcome>,
+  { parts, error, usage, timing, contextStartMessageId }: Infer<typeof outcome>,
 ) {
   await ctx.db.insert('messages', {
     threadId: live.threadId,
@@ -155,6 +157,7 @@ async function finalize(
     error,
     usage,
     timing,
+    contextStartMessageId,
   })
   await ctx.db.delete('liveAnswers', live._id)
   await ctx.db.patch('threads', live.threadId, { lastMessageAt: Date.now() })

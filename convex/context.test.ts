@@ -23,12 +23,18 @@ const answer = (text: string): ContextMessage => ({
   attachments: [],
 })
 
+/** A Model that reads these kinds, with no known limits unless given. */
+const model = (
+  attachmentTypes: ('image' | 'pdf')[],
+  limits = { contextLimit: 0, outputLimit: 0 },
+) => ({ attachmentTypes, ...limits })
+
 const bytes = (text: string) => new TextEncoder().encode(text)
 const load = async ({ name }: { name: string }) =>
   name.startsWith('gone') ? null : bytes(`contents of ${name}`)
 
 test('sends readable files as base64 data and inlines text files', async () => {
-  const messages = await contextMessages(
+  const { messages } = await contextMessages(
     [
       prompt('Look', [
         { name: 'cat.webp', mediaType: 'image/webp', size: 10 },
@@ -37,7 +43,7 @@ test('sends readable files as base64 data and inlines text files', async () => {
       ]),
       answer('Nice.'),
     ],
-    ['image', 'pdf'],
+    model(['image', 'pdf']),
     load,
   )
 
@@ -69,7 +75,9 @@ test('sends readable files as base64 data and inlines text files', async () => {
 })
 
 test('swaps files the Model or the server cannot read for placeholders', async () => {
-  const [message] = await contextMessages(
+  const {
+    messages: [message],
+  } = await contextMessages(
     [
       prompt('', [
         { name: 'cat.webp', mediaType: 'image/webp', size: 10 },
@@ -77,7 +85,7 @@ test('swaps files the Model or the server cannot read for placeholders', async (
         { name: 'gone.txt', mediaType: 'text/plain', size: 10 },
       ]),
     ],
-    ['image'],
+    model(['image']),
     load,
   )
 
@@ -92,14 +100,16 @@ test('swaps files the Model or the server cannot read for placeholders', async (
 })
 
 test('treats a text file that is not UTF-8 or holds NUL as unreadable', async () => {
-  const [message] = await contextMessages(
+  const {
+    messages: [message],
+  } = await contextMessages(
     [
       prompt('Hi', [
         { name: 'binary.txt', mediaType: 'text/plain', size: 3 },
         { name: 'latin1.txt', mediaType: 'text/plain', size: 1 },
       ]),
     ],
-    [],
+    model([]),
     async ({ name }) =>
       name === 'binary.txt'
         ? new Uint8Array([97, 0, 98])
@@ -121,7 +131,7 @@ test('swaps the oldest readable files for placeholders until the request fits 20
     // 8 MB once base64 encoded.
     size: 6 * MB,
   })
-  const messages = await contextMessages(
+  const { messages } = await contextMessages(
     [
       // Unreadable, so it neither counts nor saves the next one.
       prompt('0', [
@@ -130,7 +140,7 @@ test('swaps the oldest readable files for placeholders until the request fits 20
       prompt('1', [pdf('first.pdf')]),
       prompt('2', [pdf('second.pdf'), pdf('third.pdf')]),
     ],
-    ['pdf'],
+    model(['pdf']),
     async (attachment) => {
       loaded.push(attachment.name)
       return load(attachment)
@@ -150,4 +160,84 @@ test('swaps the oldest readable files for placeholders until the request fits 20
   ])
   // Omitted blobs are never read.
   expect(loaded).toEqual(['second.pdf', 'third.pdf'])
+})
+
+// (1100 − 100) × 0.9 leaves 900 tokens, at 4 characters each.
+const limits = { contextLimit: 1100, outputLimit: 100 }
+const tokens = (n: number) => 'x'.repeat(n * 4)
+const textOf = (message?: { parts: unknown[] }) =>
+  message?.parts.flatMap((p) =>
+    typeof p === 'object' && p && 'text' in p ? [p.text] : [],
+  )
+
+test('sends the whole Thread when it fits the Model', async () => {
+  const { messages, dropped } = await contextMessages(
+    [prompt(tokens(400), []), answer(tokens(100)), prompt(tokens(390), [])],
+    model([], limits),
+    load,
+  )
+
+  expect(messages).toHaveLength(3)
+  expect(dropped).toBe(0)
+})
+
+test('drops the oldest Prompt+Answer pairs until the rest fit', async () => {
+  const loaded: string[] = []
+  const { messages, dropped } = await contextMessages(
+    [
+      // Would fit as text, but an image costs a fixed 1,600 tokens.
+      prompt('0', [{ name: 'old.webp', mediaType: 'image/webp', size: 10 }]),
+      answer(tokens(100)),
+      prompt(tokens(300), []),
+      answer(tokens(100)),
+      prompt(tokens(300), []),
+    ],
+    model(['image'], limits),
+    async (attachment) => {
+      loaded.push(attachment.name)
+      return load(attachment)
+    },
+  )
+
+  expect(dropped).toBe(2)
+  expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+  expect(textOf(messages[0])).toEqual([tokens(300)])
+  // Dropped blobs are never read.
+  expect(loaded).toEqual([])
+})
+
+test('refuses a Prompt that alone does not fit the Model', async () => {
+  await expect(
+    contextMessages(
+      [prompt('Hi', []), answer('Hello.'), prompt(tokens(901), [])],
+      model([], limits),
+      load,
+    ),
+  ).rejects.toThrow('Prompt too long for this Model')
+})
+
+test('counts PDFs by size against the budget', async () => {
+  await expect(
+    contextMessages(
+      [
+        prompt('Read', [
+          // 20 bytes a token.
+          { name: 'paper.pdf', mediaType: 'application/pdf', size: 20_000 },
+        ]),
+      ],
+      model(['pdf'], limits),
+      load,
+    ),
+  ).rejects.toThrow('Prompt too long for this Model')
+})
+
+test('skips the check when the Model has no known limits', async () => {
+  const { messages, dropped } = await contextMessages(
+    [prompt(tokens(100_000), []), answer('Hi'), prompt(tokens(100_000), [])],
+    model([], { contextLimit: 0, outputLimit: 100 }),
+    load,
+  )
+
+  expect(messages).toHaveLength(3)
+  expect(dropped).toBe(0)
 })

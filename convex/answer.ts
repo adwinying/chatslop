@@ -1,7 +1,13 @@
+import type { Id } from '@/convex/_generated/dataModel'
 import type { Part } from '@/convex/parts'
 import type { UIMessage } from 'ai'
 import type { Infer } from 'convex/values'
-import { convertToModelMessages, readUIMessageStream, streamText } from 'ai'
+import {
+  APICallError,
+  convertToModelMessages,
+  readUIMessageStream,
+  streamText,
+} from 'ai'
 import { v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
 import { internalAction } from '@/convex/_generated/server'
@@ -31,6 +37,7 @@ export const run = internalAction({
     let error: string | undefined
     let usage: Infer<typeof usageValidator> | undefined
     let firstTokenAt: number | undefined
+    let contextStartMessageId: Id<'messages'> | undefined
 
     let saving: Promise<void> | undefined
     const save = () => {
@@ -57,6 +64,15 @@ export const run = internalAction({
     const ticker = setInterval(save, FLUSH_MS)
 
     try {
+      const sent = await contextMessages(
+        messages,
+        model,
+        async ({ storageId }) => {
+          const blob = await ctx.storage.get(storageId)
+          return blob && new Uint8Array(await blob.arrayBuffer())
+        },
+      )
+      if (sent.dropped) contextStartMessageId = messages[sent.dropped]!._id
       const result = streamText({
         ...modelCall({
           provider,
@@ -68,14 +84,7 @@ export const run = internalAction({
         messages: await convertToModelMessages(
           // Stored parts came from the SDK; the validator only loosened their JSON.
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-          (await contextMessages(
-            messages,
-            model.attachmentTypes,
-            async ({ storageId }) => {
-              const blob = await ctx.storage.get(storageId)
-              return blob && new Uint8Array(await blob.arrayBuffer())
-            },
-          )) as Array<Omit<UIMessage, 'id'>>,
+          sent.messages as Array<Omit<UIMessage, 'id'>>,
           // A stopped Answer may end mid Web search; replay it without the call.
           { ignoreIncompleteToolCalls: true },
         ),
@@ -124,6 +133,7 @@ export const run = internalAction({
         error,
         usage,
         timing,
+        contextStartMessageId,
       })
     } catch (cause) {
       // Parts the validator rejects still end the Answer, with the reason.
@@ -132,12 +142,22 @@ export const run = internalAction({
         parts: [],
         error: `Could not save the Answer: ${errorMessage(cause)}`,
         timing,
+        contextStartMessageId,
       })
     }
     return null
   },
 })
 
+/** How Providers word a request over the Model's window. */
+const OVERFLOW =
+  /context.length|context window|too long|too many tokens|maximum number of tokens/i
+
 function errorMessage(cause: unknown) {
+  if (
+    APICallError.isInstance(cause) &&
+    OVERFLOW.test(`${cause.message} ${cause.responseBody ?? ''}`)
+  )
+    return 'Thread too long for this Model'
   return cause instanceof Error ? cause.message : String(cause)
 }
