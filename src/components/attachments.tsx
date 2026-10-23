@@ -48,6 +48,10 @@ const formatSize = (bytes: number) =>
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
+// Not crypto.randomUUID(): browsers offer it only over HTTPS, and the
+// app is also reached over plain HTTP on the LAN.
+let nextUploadKey = 0
+
 /**
  * The Attachment intake shared by the composer and the Prompt editor:
  * picker, paste and drop, each file checked, processed and uploaded on
@@ -65,7 +69,7 @@ export function useIntake(
   const deleteUnsent = useMutation(api.attachments.remove)
 
   const upload = async (file: File) => {
-    const key = crypto.randomUUID()
+    const key = String(nextUploadKey++)
     const update = (progress: number) =>
       setUploads((list) =>
         list.map((u) => (u.key === key ? { ...u, progress } : u)),
