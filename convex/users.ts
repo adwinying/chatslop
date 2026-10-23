@@ -128,6 +128,19 @@ export const resetPassword = action({
   },
 })
 
+/**
+ * Deletes the User's account. The `user` delete trigger in auth.ts then
+ * deletes their data. Admins can't delete themselves.
+ */
+export const remove = action({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    await asAdmin(ctx, (api, headers) =>
+      api.removeUser({ body: { userId }, headers }),
+    )
+  },
+})
+
 export const promote = action({
   args: { userId: v.string() },
   handler: async (ctx, { userId }) => {
