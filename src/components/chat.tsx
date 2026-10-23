@@ -2,7 +2,7 @@ import type { Id } from '@/convex/_generated/dataModel'
 import type { AttachmentKind } from '@/convex/intake'
 import type { Part } from '@/convex/parts'
 import type { FunctionReturnType } from 'convex/server'
-import { useLocation, useNavigate } from '@tanstack/react-router'
+import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { Fragment, type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -41,7 +41,10 @@ import {
   useDraftAttachments,
   useDraftUploads,
 } from '~/lib/draft'
+import { type ChatPreload, orPreloaded } from '~/lib/preload'
 import { cn } from '~/lib/utils'
+
+const appRoute = getRouteApi('/_app')
 
 /** Runs a regenerate or edit, then toasts how many Messages it removed. True once it succeeds. */
 async function truncate(run: () => Promise<number>) {
@@ -52,27 +55,37 @@ async function truncate(run: () => Promise<number>) {
 }
 
 /** The Thread view, or a new Thread without a `threadId`. */
-export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
+export function Chat({
+  threadId,
+  preloaded,
+}: {
+  threadId?: Id<'threads'>
+  preloaded?: ChatPreload
+}) {
   const navigate = useNavigate()
+  const shell = appRoute.useLoaderData()
   const args = threadId ? { threadId } : 'skip'
   // A Thread search hit links to its Message by hash, which can be older
   // than the newest Messages, so it loads on its own.
   const hash = useLocation({ select: (location) => location.hash })
-  const latest = useQuery(api.threads.messages, args)
+  const latest = orPreloaded(
+    useQuery(api.threads.messages, args),
+    preloaded?.messages,
+  )
   const hitArgs = threadId && hash ? { threadId, messageId: hash } : 'skip'
   const hit = useQuery(api.threads.message, hitArgs)
   const messages =
     hit && latest && !latest.some((m) => m._id === hit._id)
       ? [hit, ...latest]
       : latest
-  const live = useQuery(api.liveAnswers.get, args)
+  const live = orPreloaded(useQuery(api.liveAnswers.get, args), preloaded?.live)
   const send = useMutation(api.threads.send)
   const stop = useMutation(api.threads.stop)
-  const choices = useChoices(threadId)
+  const choices = useChoices(threadId, preloaded?.options)
   const { options, model } = choices
-  const me = useQuery(api.users.me)
+  const me = orPreloaded(useQuery(api.users.me), shell?.me)
   const draft = me ? draftKey(me.id, threadId) : undefined
-  const thread = useQuery(api.threads.get, args)
+  const thread = orPreloaded(useQuery(api.threads.get, args), preloaded?.thread)
   const deleted = !!threadId && thread === null && !!me
   const regenerate = useMutation(api.threads.regenerate)
   const edit = useMutation(api.threads.edit)
@@ -323,8 +336,14 @@ function ThreadHeader({
  * here, else the remembered choices. A pick that stops being usable falls
  * back the same way, and the level is re-resolved for each Model.
  */
-function useChoices(threadId?: Id<'threads'>) {
-  const options = useQuery(api.models.options, { threadId })
+function useChoices(
+  threadId?: Id<'threads'>,
+  preloaded?: FunctionReturnType<typeof api.models.options>,
+) {
+  const options = orPreloaded(
+    useQuery(api.models.options, { threadId }),
+    preloaded,
+  )
   const [picked, setPicked] = useState<{
     modelId?: Id<'models'>
     reasoningLevel?: string

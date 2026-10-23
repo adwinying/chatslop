@@ -29,13 +29,17 @@ export const liveAnswerOf = (ctx: QueryCtx, threadId: Id<'threads'>) =>
     .withIndex('by_thread', (q) => q.eq('threadId', threadId))
     .unique()
 
-/** The newest Messages, oldest first. */
-export async function latestMessages(ctx: QueryCtx, threadId: Id<'threads'>) {
+/** The newest Messages, oldest first, at most `MAX_MESSAGES`. */
+export async function latestMessages(
+  ctx: QueryCtx,
+  threadId: Id<'threads'>,
+  limit = MAX_MESSAGES,
+) {
   const newest = await ctx.db
     .query('messages')
     .withIndex('by_thread', (q) => q.eq('threadId', threadId))
     .order('desc')
-    .take(MAX_MESSAGES)
+    .take(Math.min(limit, MAX_MESSAGES))
   return newest.toReversed()
 }
 
@@ -88,13 +92,13 @@ async function forView(ctx: QueryCtx, messages: Doc<'messages'>[]) {
   )
 }
 
-/** The Thread's newest finished Messages, oldest first. Null while signed out. */
+/** The Thread's newest finished Messages, `limit` at most, oldest first. Null while signed out. */
 export const messages = query({
-  args: { threadId: v.id('threads') },
-  handler: async (ctx, { threadId }) => {
+  args: { threadId: v.id('threads'), limit: v.optional(v.number()) },
+  handler: async (ctx, { threadId, limit }) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user || !(await viewThread(ctx, threadId, user._id))) return null
-    return await forView(ctx, await latestMessages(ctx, threadId))
+    return await forView(ctx, await latestMessages(ctx, threadId, limit))
   },
 })
 
