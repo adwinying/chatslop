@@ -1,6 +1,7 @@
 import type { Id } from '@/convex/_generated/dataModel'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { api, internal } from '@/convex/_generated/api'
+import { SWEEP_BATCH } from '@/convex/attachments'
 import {
   modelOf,
   setup,
@@ -290,6 +291,19 @@ describe('unsent Attachments', () => {
     expect(
       await t.run((ctx) => ctx.db.query('attachments').take(10)),
     ).toMatchObject([{ _id: sent._id }, { _id: fresh._id }])
+    expect(await blobCount(t)).toBe(2)
+  })
+
+  test('blobs never registered are deleted after 24 hours, a batch at a time', async () => {
+    const { t, add } = await signedIn()
+    await add('unsent.txt', 'unsent')
+    for (let i = 0; i <= SWEEP_BATCH; i++) await store(t, `lost ${i}`)
+    vi.advanceTimersByTime(24 * 3_600_000 + 1000)
+    await store(t, 'still uploading')
+
+    await t.mutation(internal.attachments.sweepBlobs, {})
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+
     expect(await blobCount(t)).toBe(2)
   })
 })

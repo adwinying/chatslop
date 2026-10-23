@@ -200,7 +200,7 @@ export const remove = mutation({
 })
 
 const UNSENT_TTL_MS = 24 * 3_600_000
-const SWEEP_BATCH = 100
+export const SWEEP_BATCH = 100
 
 /** The cron's cleanup of Attachments left unsent for 24 hours, a batch at a time. */
 export const sweep = internalMutation({
@@ -218,6 +218,42 @@ export const sweep = internalMutation({
     for (const attachment of stale) await deleteAttachment(ctx, attachment)
     if (stale.length === SWEEP_BATCH)
       await ctx.scheduler.runAfter(0, internal.attachments.sweep, {})
+    return null
+  },
+})
+
+/** How far back the daily blob sweep looks, so one missed run loses nothing. */
+const BLOB_SWEEP_SPAN_MS = 2 * UNSENT_TTL_MS
+
+/**
+ * The cron's cleanup of blobs uploaded but never registered, e.g. when the
+ * tab closed mid-upload. Only blobs of the last span past the TTL are
+ * checked, so sent ones aren't rescanned forever.
+ */
+export const sweepBlobs = internalMutation({
+  args: { after: v.optional(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const before = Date.now() - UNSENT_TTL_MS
+    const after = args.after ?? before - BLOB_SWEEP_SPAN_MS
+    const blobs = await ctx.db.system
+      .query('_storage')
+      .withIndex('by_creation_time', (q) =>
+        q.gt('_creationTime', after).lte('_creationTime', before),
+      )
+      .take(SWEEP_BATCH)
+    for (const blob of blobs) {
+      const registered = await ctx.db
+        .query('attachments')
+        .withIndex('by_storage', (q) => q.eq('storageId', blob._id))
+        .first()
+      if (!registered) await ctx.storage.delete(blob._id)
+    }
+    const last = blobs.at(-1)
+    if (blobs.length === SWEEP_BATCH && last)
+      await ctx.scheduler.runAfter(0, internal.attachments.sweepBlobs, {
+        after: last._creationTime,
+      })
     return null
   },
 })

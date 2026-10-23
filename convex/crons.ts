@@ -17,4 +17,11 @@ crons.interval(
   {},
 )
 
+crons.interval(
+  'delete blobs never registered for 24 hours',
+  { hours: 24 },
+  internal.attachments.sweepBlobs,
+  {},
+)
+
 export default crons
