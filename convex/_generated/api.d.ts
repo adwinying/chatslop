@@ -24,6 +24,8 @@ import type * as models from "../models.js";
 import type * as parts from "../parts.js";
 import type * as providers from "../providers.js";
 import type * as reasoning from "../reasoning.js";
+import type * as search from "../search.js";
+import type * as searchText from "../searchText.js";
 import type * as seed from "../seed.js";
 import type * as settings from "../settings.js";
 import type * as threads from "../threads.js";
@@ -54,6 +56,8 @@ declare const fullApi: ApiFromModules<{
   parts: typeof parts;
   providers: typeof providers;
   reasoning: typeof reasoning;
+  search: typeof search;
+  searchText: typeof searchText;
   seed: typeof seed;
   settings: typeof settings;
   threads: typeof threads;

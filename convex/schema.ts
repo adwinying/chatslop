@@ -73,6 +73,9 @@ export default defineSchema({
   threads: defineTable({
     userId: v.string(),
     title: v.string(),
+    // `toSearchText(title)`. Unset only on Threads from before Thread search,
+    // until `search:reindex` runs.
+    searchTitle: v.optional(v.string()),
     titlePending: v.boolean(),
     pinned: v.boolean(),
     lastMessageAt: v.number(),
@@ -80,7 +83,7 @@ export default defineSchema({
   })
     .index('by_user_pinned_last', ['userId', 'pinned', 'lastMessageAt'])
     .searchIndex('search_title', {
-      searchField: 'title',
+      searchField: 'searchTitle',
       filterFields: ['userId'],
     }),
 

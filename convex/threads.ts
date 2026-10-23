@@ -16,6 +16,7 @@ import { STALE_MS } from '@/convex/liveAnswers'
 import { usableModel } from '@/convex/models'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import schema from '@/convex/schema'
+import { messageText, titled, toSearchText } from '@/convex/searchText'
 import { updateSettings } from '@/convex/userSettings'
 
 /** Messages per Thread that the view shows and the Context holds, newest kept. */
@@ -170,20 +171,24 @@ async function remember(
   })
 }
 
-/** The Prompt's text and what's stored for it. An Attachment-only Prompt keeps no text part. */
+/**
+ * The Prompt's text, what the Title Model reads, and what's stored for it.
+ * An Attachment-only Prompt keeps no text part.
+ */
 function promptFields(written: string, attachments: Doc<'attachments'>[]) {
   const text = written.trim()
   if (!text && !attachments.length)
     throw new ConvexError('Write a Prompt first')
+  const parts = text ? [{ type: 'text' as const, text }] : []
+  // Filenames, not contents, are searchable and seen by the Title Model.
+  const searchable = messageText(
+    parts,
+    attachments.map((a) => a.name),
+  )
   return {
     text,
-    fields: {
-      parts: text ? [{ type: 'text' as const, text }] : [],
-      // Filenames, not contents, are searchable and seen by the Title Model.
-      searchText: [text, ...attachments.map((a) => a.name)]
-        .filter(Boolean)
-        .join('\n'),
-    },
+    searchable,
+    fields: { parts, searchText: toSearchText(searchable) },
   }
 }
 
@@ -223,14 +228,14 @@ export const send = mutation({
       attachmentIds,
       modelId: choices.modelId,
     })
-    const { text, fields } = promptFields(written, attachments)
+    const { text, searchable, fields } = promptFields(written, attachments)
 
     if (threadId) {
       await idleThread(ctx, threadId, user._id)
     } else {
       threadId = await ctx.db.insert('threads', {
         userId: user._id,
-        title: fallbackTitle(text, attachments),
+        ...titled(fallbackTitle(text, attachments)),
         titlePending: true,
         pinned: false,
         lastMessageAt: Date.now(),
@@ -238,7 +243,7 @@ export const send = mutation({
       })
       await ctx.scheduler.runAfter(0, internal.titles.generate, {
         threadId,
-        prompt: fields.searchText,
+        prompt: searchable,
       })
     }
 
@@ -386,7 +391,10 @@ export const rename = mutation({
     await ownThread(ctx, threadId, user._id)
     const title = args.title.trim().slice(0, TITLE_LENGTH)
     if (!title) throw new ConvexError('Write a title first')
-    await ctx.db.patch('threads', threadId, { title, titlePending: false })
+    await ctx.db.patch('threads', threadId, {
+      ...titled(title),
+      titlePending: false,
+    })
     return null
   },
 })

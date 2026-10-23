@@ -1,6 +1,5 @@
 import type { Doc } from '@/convex/_generated/dataModel'
 import type { MutationCtx } from '@/convex/_generated/server'
-import type { Part } from '@/convex/parts'
 import type { Infer } from 'convex/values'
 import { v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
@@ -13,6 +12,7 @@ import { attachmentsOf } from '@/convex/attachments'
 import { authComponent } from '@/convex/auth'
 import { partsValidator } from '@/convex/parts'
 import { timingValidator, usageValidator } from '@/convex/schema'
+import { messageText, toSearchText } from '@/convex/searchText'
 import { latestMessages, liveAnswerOf, viewThread } from '@/convex/threads'
 
 /** The action writes at least this often, even with nothing new to save. */
@@ -160,7 +160,7 @@ async function finalize(
     userId: live.userId,
     role: 'assistant',
     parts,
-    searchText: searchText(parts),
+    searchText: toSearchText(messageText(parts)),
     modelId: live.modelId,
     reasoningLevel: live.reasoningLevel,
     webSearch: live.webSearch,
@@ -172,11 +172,4 @@ async function finalize(
   })
   await ctx.db.delete('liveAnswers', live._id)
   await ctx.db.patch('threads', live.threadId, { lastMessageAt: Date.now() })
-}
-
-// Thread search will bigram CJK here; reasoning and sources stay out.
-export function searchText(parts: Part[]) {
-  return parts
-    .flatMap((part) => (part.type === 'text' ? [part.text] : []))
-    .join('\n')
 }
