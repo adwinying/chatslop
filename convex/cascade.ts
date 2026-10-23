@@ -55,6 +55,45 @@ export const deleteMessages = internalMutation({
 })
 
 /**
+ * Deletes a deleted User's settings, unsent Attachments, and Threads, each
+ * Thread through `deleteThread`. Runs in scheduled batches like
+ * `deleteMessages`, since a User may have any number of Threads.
+ */
+export const deleteUser = internalMutation({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    const next = async () => {
+      await ctx.scheduler.runAfter(0, internal.cascade.deleteUser, { userId })
+    }
+    const settings = await ctx.db
+      .query('userSettings')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .unique()
+    if (settings) await ctx.db.delete('userSettings', settings._id)
+
+    let deleted = 0
+    const unsent = ctx.db
+      .query('attachments')
+      .withIndex('by_user_message', (q) =>
+        q.eq('userId', userId).eq('messageId', undefined),
+      )
+    for await (const attachment of unsent) {
+      if (deleted === CASCADE_BATCH || (await nearLimits(ctx))) return next()
+      await deleteAttachment(ctx, attachment)
+      deleted++
+    }
+    const threads = ctx.db
+      .query('threads')
+      .withIndex('by_user_pinned_last', (q) => q.eq('userId', userId))
+    for await (const thread of threads) {
+      if (deleted === CASCADE_BATCH || (await nearLimits(ctx))) return next()
+      await deleteThread(ctx, thread._id)
+      deleted++
+    }
+  },
+})
+
+/**
  * Deletes the Messages after `message`, and `message` too unless kept, with
  * their Attachments and blobs. Returns how many Messages went. Only Messages
  * the view shows can be truncated, which bounds the work to one transaction.

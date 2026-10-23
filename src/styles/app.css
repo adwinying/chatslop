@@ -29,6 +29,19 @@
   /* Answers. Noto Serif JP covers Japanese. */
   --font-serif: 'Lora Variable', 'Noto Serif JP Variable', ui-serif, serif;
   --font-mono: 'Hack', ui-monospace, monospace;
+  /* Marks the Message a Thread search jumped to. */
+  --animate-flash: flash 1.6s ease-out;
+
+  @keyframes flash {
+    from {
+      outline: 2px solid var(--color-brand-500);
+      outline-offset: 6px;
+    }
+    to {
+      outline: 2px solid transparent;
+      outline-offset: 6px;
+    }
+  }
 }
 
 @theme inline {

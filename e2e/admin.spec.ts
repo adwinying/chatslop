@@ -1,12 +1,47 @@
 import { expect, test } from '@playwright/test'
+import { logIn } from '@/e2e/log-in'
+
+test('an Admin creates a User, who logs in until disabled', async ({
+  page,
+  browser,
+}) => {
+  // Unique per run, since the dev deployment outlives it.
+  const username = `e2e_${Date.now()}`
+  const password = 'e2e-password-123'
+  await logIn(page)
+  await page.getByRole('link', { name: 'Admin' }).click()
+
+  const form = page.getByRole('form', { name: 'New User' })
+  await form.getByLabel('Username').fill(username)
+  await form.getByLabel('Password').fill(password)
+  await form.getByRole('button', { name: 'Create' }).click()
+  const row = page.getByRole('row').filter({ hasText: username })
+  await expect(row).toContainText(`${username}@users.invalid`)
+
+  const asUser = async () => {
+    const context = await browser.newContext()
+    const userPage = await context.newPage()
+    await logIn(userPage, username, password)
+    return userPage
+  }
+  await expect(await asUser()).toHaveURL('/')
+
+  await row.getByRole('button', { name: 'Disable' }).click()
+  await expect(row.getByRole('button', { name: 'Enable' })).toBeVisible()
+  const refused = await asUser()
+  await expect(refused.getByRole('alert')).toBeVisible()
+  await expect(refused).toHaveURL('/login')
+
+  // Leaves the deployment as seeded for the next run.
+  page.once('dialog', (dialog) => void dialog.accept())
+  await row.getByRole('button', { name: 'Delete' }).click()
+  await expect(row).toHaveCount(0)
+})
 
 test("a Model an Admin disables leaves the User's options", async ({
   page,
 }) => {
-  await page.goto('/login')
-  await page.getByLabel('Username or email').fill('admin')
-  await page.getByLabel('Password').fill('hogehoge')
-  await page.getByRole('button', { name: 'Log in' }).click()
+  await logIn(page)
   await expect(page).toHaveURL('/')
 
   // Back and forward stay in the app, so no reload drops a pending toggle.

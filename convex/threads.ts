@@ -16,6 +16,7 @@ import { STALE_MS } from '@/convex/liveAnswers'
 import { usableModel } from '@/convex/models'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import schema from '@/convex/schema'
+import { messageText, withSearchTitle, toSearchText } from '@/convex/searchText'
 import { updateSettings } from '@/convex/userSettings'
 
 /** Messages per Thread that the view shows and the Context holds, newest kept. */
@@ -59,41 +60,58 @@ export async function viewThread(
 }
 
 /**
- * The Thread's finished Messages, oldest first: Answers with their Model's
- * name, Prompts with their Attachments, which the browser reads by ID alone.
- * Null while signed out.
+ * Answers with their Model's name, Prompts with their Attachments, which the
+ * browser reads by ID alone.
  */
+async function forView(ctx: QueryCtx, messages: Doc<'messages'>[]) {
+  const names = new Map<Id<'models'>, string>()
+  for (const m of messages)
+    if (m.role === 'assistant' && !names.has(m.modelId))
+      // A referenced Model can't be deleted.
+      names.set(m.modelId, (await ctx.db.get('models', m.modelId))?.name ?? '')
+  return await Promise.all(
+    messages.map(async (m) =>
+      m.role === 'assistant'
+        ? { ...m, modelName: names.get(m.modelId)! }
+        : {
+            ...m,
+            attachments: (await attachmentsOf(ctx, m._id)).map(
+              ({ _id, name, mediaType, size }) => ({
+                _id,
+                name,
+                mediaType,
+                size,
+              }),
+            ),
+          },
+    ),
+  )
+}
+
+/** The Thread's newest finished Messages, oldest first. Null while signed out. */
 export const messages = query({
   args: { threadId: v.id('threads') },
   handler: async (ctx, { threadId }) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user || !(await viewThread(ctx, threadId, user._id))) return null
-    const latest = await latestMessages(ctx, threadId)
-    const names = new Map<Id<'models'>, string>()
-    for (const m of latest)
-      if (m.role === 'assistant' && !names.has(m.modelId))
-        // A referenced Model can't be deleted.
-        names.set(
-          m.modelId,
-          (await ctx.db.get('models', m.modelId))?.name ?? '',
-        )
-    return await Promise.all(
-      latest.map(async (m) =>
-        m.role === 'assistant'
-          ? { ...m, modelName: names.get(m.modelId)! }
-          : {
-              ...m,
-              attachments: (await attachmentsOf(ctx, m._id)).map(
-                ({ _id, name, mediaType, size }) => ({
-                  _id,
-                  name,
-                  mediaType,
-                  size,
-                }),
-              ),
-            },
-      ),
-    )
+    return await forView(ctx, await latestMessages(ctx, threadId))
+  },
+})
+
+/**
+ * One of the Thread's Messages by the ID in the URL hash, so a Thread search
+ * hit older than `messages` still shows. Null unless it's in the Thread.
+ */
+export const message = query({
+  args: { threadId: v.id('threads'), messageId: v.string() },
+  handler: async (ctx, { threadId, messageId }) => {
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user || !(await viewThread(ctx, threadId, user._id))) return null
+    const id = ctx.db.normalizeId('messages', messageId)
+    const target = id && (await ctx.db.get('messages', id))
+    if (target?.threadId !== threadId) return null
+    const [shown] = await forView(ctx, [target])
+    return shown!
   },
 })
 
@@ -170,20 +188,24 @@ async function remember(
   })
 }
 
-/** The Prompt's text and what's stored for it. An Attachment-only Prompt keeps no text part. */
+/**
+ * The Prompt's text, what the Title Model reads, and what's stored for it.
+ * An Attachment-only Prompt keeps no text part.
+ */
 function promptFields(written: string, attachments: Doc<'attachments'>[]) {
   const text = written.trim()
   if (!text && !attachments.length)
     throw new ConvexError('Write a Prompt first')
+  const parts = text ? [{ type: 'text' as const, text }] : []
+  // Filenames, not contents, are searchable and seen by the Title Model.
+  const searchable = messageText(
+    parts,
+    attachments.map((a) => a.name),
+  )
   return {
     text,
-    fields: {
-      parts: text ? [{ type: 'text' as const, text }] : [],
-      // Filenames, not contents, are searchable and seen by the Title Model.
-      searchText: [text, ...attachments.map((a) => a.name)]
-        .filter(Boolean)
-        .join('\n'),
-    },
+    searchable,
+    fields: { parts, searchText: toSearchText(searchable) },
   }
 }
 
@@ -223,14 +245,14 @@ export const send = mutation({
       attachmentIds,
       modelId: choices.modelId,
     })
-    const { text, fields } = promptFields(written, attachments)
+    const { text, searchable, fields } = promptFields(written, attachments)
 
     if (threadId) {
       await idleThread(ctx, threadId, user._id)
     } else {
       threadId = await ctx.db.insert('threads', {
         userId: user._id,
-        title: fallbackTitle(text, attachments),
+        ...withSearchTitle(fallbackTitle(text, attachments)),
         titlePending: true,
         pinned: false,
         lastMessageAt: Date.now(),
@@ -238,7 +260,7 @@ export const send = mutation({
       })
       await ctx.scheduler.runAfter(0, internal.titles.generate, {
         threadId,
-        prompt: fields.searchText,
+        prompt: searchable,
       })
     }
 
@@ -386,7 +408,10 @@ export const rename = mutation({
     await ownThread(ctx, threadId, user._id)
     const title = args.title.trim().slice(0, TITLE_LENGTH)
     if (!title) throw new ConvexError('Write a title first')
-    await ctx.db.patch('threads', threadId, { title, titlePending: false })
+    await ctx.db.patch('threads', threadId, {
+      ...withSearchTitle(title),
+      titlePending: false,
+    })
     return null
   },
 })

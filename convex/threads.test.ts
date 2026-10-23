@@ -9,6 +9,7 @@ import {
   syncModels,
   type Test,
 } from '@/convex/test.setup'
+import { MAX_MESSAGES } from '@/convex/threads'
 
 const answerParts = [
   { type: 'reasoning' as const, text: 'Hmm.', state: 'done' as const },
@@ -398,5 +399,55 @@ describe('threads.edit', () => {
         ...choices,
       }),
     ).rejects.toThrow('Prompt not found')
+  })
+})
+
+describe('threads.message', () => {
+  test('loads a search hit older than the Messages the Thread view shows', async () => {
+    const { t, as, userId, threadId } = await sendFirstPrompt()
+    const [oldest] = await messagesOf(t, threadId)
+    await t.run(async (ctx) => {
+      for (let i = 0; i < MAX_MESSAGES; i++)
+        await ctx.db.insert('messages', {
+          threadId,
+          userId,
+          role: 'user',
+          parts: [{ type: 'text', text: `Later ${i}` }],
+          searchText: `Later ${i}`,
+        })
+    })
+    const shown = await as.query(api.threads.messages, { threadId })
+    expect(shown?.map((m) => m._id)).not.toContain(oldest!._id)
+
+    expect(
+      await as.query(api.threads.message, {
+        threadId,
+        messageId: oldest!._id,
+      }),
+    ).toMatchObject({
+      _id: oldest!._id,
+      parts: [{ type: 'text', text: 'Hello' }],
+      attachments: [],
+    })
+  })
+
+  test("is null for another Thread's Message or a hash that isn't a Message ID", async () => {
+    const { t, as, threadId, modelId } = await sendFirstPrompt()
+    const otherThreadId = await as.mutation(api.threads.send, {
+      text: 'Elsewhere',
+      modelId,
+      webSearch: false,
+    })
+    const [elsewhere] = await messagesOf(t, otherThreadId)
+
+    expect(
+      await as.query(api.threads.message, {
+        threadId,
+        messageId: elsewhere!._id,
+      }),
+    ).toBeNull()
+    expect(
+      await as.query(api.threads.message, { threadId, messageId: 'nope' }),
+    ).toBeNull()
   })
 })

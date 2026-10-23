@@ -2,14 +2,14 @@ import type { Id } from '@/convex/_generated/dataModel'
 import type { AttachmentKind } from '@/convex/intake'
 import type { Part } from '@/convex/parts'
 import type { FunctionReturnType } from 'convex/server'
-import { useNavigate } from '@tanstack/react-router'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { Fragment, type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import { Answer } from '~/components/answer'
-import { SidebarButton } from '~/components/app-sidebar'
+import { jumpToMessage, SidebarButton } from '~/components/app-sidebar'
 import {
   hasFiles,
   type Intake,
@@ -55,7 +55,16 @@ async function truncate(run: () => Promise<number>) {
 export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const navigate = useNavigate()
   const args = threadId ? { threadId } : 'skip'
-  const messages = useQuery(api.threads.messages, args)
+  // A Thread search hit links to its Message by hash, which can be older
+  // than the newest Messages, so it loads on its own.
+  const hash = useLocation({ select: (location) => location.hash })
+  const latest = useQuery(api.threads.messages, args)
+  const hitArgs = threadId && hash ? { threadId, messageId: hash } : 'skip'
+  const hit = useQuery(api.threads.message, hitArgs)
+  const messages =
+    hit && latest && !latest.some((m) => m._id === hit._id)
+      ? [hit, ...latest]
+      : latest
   const live = useQuery(api.liveAnswers.get, args)
   const send = useMutation(api.threads.send)
   const stop = useMutation(api.threads.stop)
@@ -82,6 +91,13 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
     if (deleted) void navigate({ to: '/' })
   }, [deleted, navigate])
 
+  // Jump to the search hit once loaded.
+  const loaded =
+    latest !== undefined && (hitArgs === 'skip' || hit !== undefined)
+  useEffect(() => {
+    if (loaded && hash) jumpToMessage(hash)
+  }, [hash, loaded])
+
   return (
     <DropZone intake={intake}>
       <ThreadHeader thread={thread} />
@@ -98,52 +114,59 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
                   Earlier messages weren't sent to the Model
                 </p>
               )}
-              {message.role === 'user' ? (
-                <Prompt
-                  text={textOf(message.parts)}
-                  attachments={message.attachments}
-                  readable={model?.attachmentTypes}
-                  busy={!!live}
-                  canSend={!!model}
-                  onSend={async (text, attachmentIds) =>
-                    !!model &&
-                    (await truncate(() =>
-                      edit({
-                        promptId: message._id,
-                        text,
-                        attachmentIds,
-                        modelId: model._id,
-                        reasoningLevel: choices.reasoningLevel,
-                        webSearch: choices.webSearch,
-                      }),
-                    ))
-                  }
-                />
-              ) : (
-                <Answer
-                  parts={message.parts}
-                  status={message.status}
-                  error={message.error}
-                  made={message}
-                  actions={
-                    <AnswerActions
-                      text={textOf(message.parts)}
-                      modelId={message.modelId}
-                      options={options}
-                      always={
-                        message._id === lastAnswerId ||
-                        message.status === 'error'
-                      }
-                      disabled={!!live}
-                      onRegenerate={(modelId) =>
-                        void truncate(() =>
-                          regenerate({ answerId: message._id, modelId }),
-                        )
-                      }
-                    />
-                  }
-                />
-              )}
+              {/* Focused by a search jump, which flashes it. */}
+              <div
+                id={message._id}
+                tabIndex={-1}
+                className="rounded-xl outline-none focus:animate-flash"
+              >
+                {message.role === 'user' ? (
+                  <Prompt
+                    text={textOf(message.parts)}
+                    attachments={message.attachments}
+                    readable={model?.attachmentTypes}
+                    busy={!!live}
+                    canSend={!!model}
+                    onSend={async (text, attachmentIds) =>
+                      !!model &&
+                      (await truncate(() =>
+                        edit({
+                          promptId: message._id,
+                          text,
+                          attachmentIds,
+                          modelId: model._id,
+                          reasoningLevel: choices.reasoningLevel,
+                          webSearch: choices.webSearch,
+                        }),
+                      ))
+                    }
+                  />
+                ) : (
+                  <Answer
+                    parts={message.parts}
+                    status={message.status}
+                    error={message.error}
+                    made={message}
+                    actions={
+                      <AnswerActions
+                        text={textOf(message.parts)}
+                        modelId={message.modelId}
+                        options={options}
+                        always={
+                          message._id === lastAnswerId ||
+                          message.status === 'error'
+                        }
+                        disabled={!!live}
+                        onRegenerate={(modelId) =>
+                          void truncate(() =>
+                            regenerate({ answerId: message._id, modelId }),
+                          )
+                        }
+                      />
+                    }
+                  />
+                )}
+              </div>
             </Fragment>
           ))}
           {live && <Answer parts={live.parts} streaming />}

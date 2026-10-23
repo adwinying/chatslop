@@ -52,7 +52,7 @@ export const post = (
     body: JSON.stringify(body),
   })
 
-async function signIn(t: Test, username: string, password: string) {
+export async function signIn(t: Test, username: string, password: string) {
   const res = await post(t, '/sign-in/username', { username, password })
   const { token }: { token: string } = await res.json()
   const sessionRes = await t.fetch('/api/auth/get-session', {
