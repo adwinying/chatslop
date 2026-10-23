@@ -22,6 +22,7 @@ import type * as llm from "../llm.js";
 import type * as modelSync from "../modelSync.js";
 import type * as models from "../models.js";
 import type * as parts from "../parts.js";
+import type * as passwordLength from "../passwordLength.js";
 import type * as providers from "../providers.js";
 import type * as reasoning from "../reasoning.js";
 import type * as search from "../search.js";
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   modelSync: typeof modelSync;
   models: typeof models;
   parts: typeof parts;
+  passwordLength: typeof passwordLength;
   providers: typeof providers;
   reasoning: typeof reasoning;
   search: typeof search;

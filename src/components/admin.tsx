@@ -7,6 +7,7 @@ import { RefreshCwIcon, Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
 import { api } from '@/convex/_generated/api'
 import { listedSince } from '@/convex/listing'
+import { PASSWORD_LENGTH } from '@/convex/passwordLength'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -122,6 +123,7 @@ function Users({ myId }: { myId: string }) {
               type="password"
               autoComplete="new-password"
               required
+              {...PASSWORD_LENGTH}
             />
           </div>
         </div>
@@ -261,6 +263,7 @@ function ResetPassword({
           type="password"
           autoComplete="new-password"
           required
+          {...PASSWORD_LENGTH}
           className="max-w-xs"
         />
         <Button type="submit">Save</Button>

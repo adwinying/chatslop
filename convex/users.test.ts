@@ -34,6 +34,23 @@ test('an Admin creates a User without an email, who logs in by username', async 
   )
 })
 
+test('a password too short is refused on create, as on reset', async () => {
+  const t = setup()
+  const { as } = await signInAdmin(t)
+  await as.action(api.users.create, { username: 'alice', password })
+  const alice = await signIn(t, 'alice', password)
+
+  await expect(
+    as.action(api.users.create, { username: 'bob', password: 'x' }),
+  ).rejects.toThrow('Password too short')
+  await expect(
+    as.action(api.users.resetPassword, { userId: alice.userId, password: 'x' }),
+  ).rejects.toThrow('Password too short')
+  expect(await as.query(api.users.list)).not.toContainEqual(
+    expect.objectContaining({ username: 'bob' }),
+  )
+})
+
 test('a disabled User is logged out and cannot log in until re-enabled', async () => {
   const t = setup()
   const { as } = await signInAdmin(t)

@@ -57,22 +57,23 @@ export const list = query({
  */
 async function asAdmin<T>(
   ctx: ActionCtx,
-  run: (
-    api: ReturnType<typeof createAuth>['api'],
-    headers: Headers,
-  ) => Promise<T>,
+  run: (auth: ReturnType<typeof createAuth>, headers: Headers) => Promise<T>,
 ) {
   await requireAdmin(ctx)
   const { auth, headers } = await authComponent.getAuth(createAuth, ctx)
   try {
-    return await run(auth.api, headers)
+    return await run(auth, headers)
   } catch (error) {
     if (isAPIError(error)) throw new ConvexError(error.message)
     throw error
   }
 }
 
-/** Creates a User. Without an email, they get a placeholder and log in by username. */
+/**
+ * Creates a User. Without an email, they get a placeholder and log in by
+ * username. Better Auth's `createUser` skips the password length limits that
+ * `setUserPassword` applies, so they're checked here.
+ */
 export const create = action({
   args: {
     username: v.string(),
@@ -80,8 +81,14 @@ export const create = action({
     email: v.optional(v.string()),
   },
   handler: async (ctx, { username, password, email }) => {
-    await asAdmin(ctx, (api, headers) =>
-      api.createUser({
+    await asAdmin(ctx, async ({ api, $context }, headers) => {
+      const { minPasswordLength, maxPasswordLength } = (await $context).password
+        .config
+      if (password.length < minPasswordLength)
+        throw new ConvexError('Password too short')
+      if (password.length > maxPasswordLength)
+        throw new ConvexError('Password too long')
+      await api.createUser({
         body: {
           email: email || `${username}@users.invalid`,
           password,
@@ -90,8 +97,8 @@ export const create = action({
           data: { username },
         },
         headers,
-      }),
-    )
+      })
+    })
   },
 })
 
@@ -99,7 +106,7 @@ export const create = action({
 export const disable = action({
   args: { userId: v.string() },
   handler: async (ctx, { userId }) => {
-    await asAdmin(ctx, (api, headers) =>
+    await asAdmin(ctx, ({ api }, headers) =>
       api.banUser({ body: { userId }, headers }),
     )
   },
@@ -108,7 +115,7 @@ export const disable = action({
 export const enable = action({
   args: { userId: v.string() },
   handler: async (ctx, { userId }) => {
-    await asAdmin(ctx, (api, headers) =>
+    await asAdmin(ctx, ({ api }, headers) =>
       api.unbanUser({ body: { userId }, headers }),
     )
   },
@@ -118,7 +125,7 @@ export const enable = action({
 export const resetPassword = action({
   args: { userId: v.string(), password: v.string() },
   handler: async (ctx, { userId, password }) => {
-    await asAdmin(ctx, async (api, headers) => {
+    await asAdmin(ctx, async ({ api }, headers) => {
       await api.setUserPassword({
         body: { userId, newPassword: password },
         headers,
@@ -135,7 +142,7 @@ export const resetPassword = action({
 export const remove = action({
   args: { userId: v.string() },
   handler: async (ctx, { userId }) => {
-    await asAdmin(ctx, (api, headers) =>
+    await asAdmin(ctx, ({ api }, headers) =>
       api.removeUser({ body: { userId }, headers }),
     )
   },
@@ -144,7 +151,7 @@ export const remove = action({
 export const promote = action({
   args: { userId: v.string() },
   handler: async (ctx, { userId }) => {
-    await asAdmin(ctx, (api, headers) =>
+    await asAdmin(ctx, ({ api }, headers) =>
       api.setRole({ body: { userId, role: 'admin' }, headers }),
     )
   },

@@ -12,6 +12,7 @@ import { components, internal } from '@/convex/_generated/api'
 import { env } from '@/convex/_generated/server'
 import authConfig from '@/convex/auth.config'
 import authSchema from '@/convex/betterAuth/schema'
+import { PASSWORD_LENGTH } from '@/convex/passwordLength'
 
 // Annotated, or `internal` and this file's types would depend on each other.
 const authFunctions: AuthFunctions = internal.auth
@@ -46,7 +47,12 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
     secret: env.BETTER_AUTH_SECRET,
     database: authComponent.adapter(ctx),
     // Admins create every account; there is no self-signup.
-    emailAndPassword: { enabled: true, disableSignUp: true },
+    emailAndPassword: {
+      enabled: true,
+      disableSignUp: true,
+      minPasswordLength: PASSWORD_LENGTH.minLength,
+      maxPasswordLength: PASSWORD_LENGTH.maxLength,
+    },
     plugins: [username(), admin(), convex({ authConfig })],
   }) satisfies BetterAuthOptions
 
