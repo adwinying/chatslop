@@ -294,11 +294,12 @@ describe('unsent Attachments', () => {
     expect(await blobCount(t)).toBe(2)
   })
 
-  test('blobs never registered are deleted after 24 hours, a batch at a time', async () => {
+  test('blobs never registered are deleted after 24 hours, a batch at a time, however old', async () => {
     const { t, add } = await signedIn()
     await add('unsent.txt', 'unsent')
     for (let i = 0; i <= SWEEP_BATCH; i++) await store(t, `lost ${i}`)
-    vi.advanceTimersByTime(24 * 3_600_000 + 1000)
+    // Days past the TTL, as after a cron outage.
+    vi.advanceTimersByTime(4 * 24 * 3_600_000)
     await store(t, 'still uploading')
 
     await t.mutation(internal.attachments.sweepBlobs, {})

@@ -223,24 +223,20 @@ export const sweep = internalMutation({
   },
 })
 
-/** How far back the daily blob sweep looks, so one missed run loses nothing. */
-const BLOB_SWEEP_SPAN_MS = 2 * UNSENT_TTL_MS
-
 /**
  * The cron's cleanup of blobs uploaded but never registered, e.g. when the
- * tab closed mid-upload. Only blobs of the last span past the TTL are
- * checked, so sent ones aren't rescanned forever.
+ * tab closed mid-upload. A full pass every time, so orphans from before an
+ * outage still go; each blob costs one index lookup.
  */
 export const sweepBlobs = internalMutation({
   args: { after: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const before = Date.now() - UNSENT_TTL_MS
-    const after = args.after ?? before - BLOB_SWEEP_SPAN_MS
     const blobs = await ctx.db.system
       .query('_storage')
       .withIndex('by_creation_time', (q) =>
-        q.gt('_creationTime', after).lte('_creationTime', before),
+        q.gt('_creationTime', args.after ?? 0).lte('_creationTime', before),
       )
       .take(SWEEP_BATCH)
     for (const blob of blobs) {
