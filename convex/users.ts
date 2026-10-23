@@ -129,8 +129,8 @@ export const resetPassword = action({
 })
 
 /**
- * Deletes the User's account. The `user` delete trigger in auth.ts then
- * deletes their data. Admins can't delete themselves.
+ * Deletes the User. The `user` delete trigger in auth.ts then deletes their
+ * data. Admins can't delete themselves.
  */
 export const remove = action({
   args: { userId: v.string() },

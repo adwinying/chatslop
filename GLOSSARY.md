@@ -12,6 +12,10 @@ _Avoid_: Member, account
 A User who can manage Users, Providers, and Models.
 _Avoid_: Owner, superuser
 
+**Disabled User**:
+A User an Admin has banned with `banUser`. They can't log in until an Admin re-enables them with `unbanUser`.
+_Avoid_: Banned user, suspended user
+
 ## Conversation
 
 **Thread**:
