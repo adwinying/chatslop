@@ -1,15 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
+import { logIn } from '@/e2e/log-in'
 
 // Runs against MOCK_MODEL, which dev.env sets: canned reasoning, one source,
 // then "Mock Answer:", markdown, and word1 … word200 at about ten words a second.
 
-async function logIn(page: Page) {
-  await page.goto('/login')
-  await page.getByLabel('Username or email').fill('admin')
-  await page.getByLabel('Password').fill('hogehoge')
-  await page.getByRole('button', { name: 'Log in' }).click()
+test.beforeEach(async ({ page }) => {
+  await logIn(page)
   await expect(page).toHaveURL('/')
-}
+})
 
 /** The highest `wordN` the Answer shows so far. */
 async function lastWord(page: Page) {
@@ -20,8 +18,6 @@ async function lastWord(page: Page) {
 test('an Answer streams, resumes after a reload, and stops', async ({
   page,
 }) => {
-  await logIn(page)
-
   await expect(page.getByRole('button', { name: /^Model: / })).toBeVisible()
   await page.getByLabel('Message').fill('Hello, mock')
   await page.getByLabel('Message').press('Enter')
@@ -55,7 +51,6 @@ test('an Answer streams, resumes after a reload, and stops', async ({
 test('a Model picked by keyboard persists after sending and reloading', async ({
   page,
 }) => {
-  await logIn(page)
   const picker = page.getByRole('button', { name: /^Model: / })
   const reasoning = page.getByLabel('Reasoning level')
   // The dev database remembers earlier runs, so pick something else each time.
@@ -86,7 +81,6 @@ test('a Model picked by keyboard persists after sending and reloading', async ({
 test('a new Thread gets its title, then is renamed, pinned and deleted', async ({
   page,
 }) => {
-  await logIn(page)
   await page.getByLabel('Message').fill('Title me')
   await page.getByLabel('Message').press('Enter')
   await expect(page).toHaveURL(/\/chat\/\w+$/)
@@ -132,7 +126,6 @@ test('the phone sidebar closes with Escape and returns focus', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 800 })
-  await logIn(page)
   const menu = page.getByRole('button', { name: 'Open sidebar' })
   const threads = page.getByRole('navigation', { name: 'Threads' })
 
@@ -157,7 +150,6 @@ async function sendAndStop(page: Page, text: string) {
 }
 
 test('an Answer regenerates with another Model', async ({ page }) => {
-  await logIn(page)
   // The dev database remembers earlier runs, so pick something else each time.
   const model = (
     await page.getByRole('button', { name: /^Model: / }).textContent()
@@ -185,7 +177,6 @@ test('an Answer regenerates with another Model', async ({ page }) => {
 test('editing a Prompt mid-Thread resends it and drops what followed', async ({
   page,
 }) => {
-  await logIn(page)
   await sendAndStop(page, 'First')
   await sendAndStop(page, 'Second')
   const first = page.getByRole('article', { name: 'Prompt' }).first()
@@ -209,7 +200,6 @@ test('a pasted image is sent, shows as a thumbnail, and only its owner can read 
   page,
   playwright,
 }) => {
-  await logIn(page)
   const message = page.getByLabel('Message')
   // The composer is hydrated once the Model options load.
   await expect(page.getByRole('button', { name: /^Model: / })).toBeVisible()
@@ -285,7 +275,6 @@ test('a pasted image is sent, shows as a thumbnail, and only its owner can read 
 })
 
 test('Thread search finds a Message and jumps to it', async ({ page }) => {
-  await logIn(page)
   // Unique per run, since the dev database remembers earlier runs.
   const stamp = Date.now()
   const target = `明日の天気予報によると${stamp}日は晴れのち曇りでしょう`

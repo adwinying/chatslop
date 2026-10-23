@@ -1,11 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-
-async function logIn(page: Page, username = 'admin', password = 'hogehoge') {
-  await page.goto('/login')
-  await page.getByLabel('Username or email').fill(username)
-  await page.getByLabel('Password').fill(password)
-  await page.getByRole('button', { name: 'Log in' }).click()
-}
+import { expect, test } from '@playwright/test'
+import { logIn } from '@/e2e/log-in'
 
 test('an Admin creates a User, who logs in until disabled', async ({
   page,
