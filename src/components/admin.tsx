@@ -64,7 +64,7 @@ function Alert({ error }: { error: string | null }) {
 }
 
 /** The form's text field, or '' when missing. */
-const textOf = (data: FormData, name: string) => {
+const formText = (data: FormData, name: string) => {
   const value = data.get(name)
   return typeof value === 'string' ? value : ''
 }
@@ -86,9 +86,9 @@ function Users({ myId }: { myId: string }) {
           const data = new FormData(form)
           void attempt(async () => {
             await create({
-              username: textOf(data, 'username'),
-              email: textOf(data, 'email'),
-              password: textOf(data, 'password'),
+              username: formText(data, 'username'),
+              email: formText(data, 'email'),
+              password: formText(data, 'password'),
             })
             form.reset()
           })
@@ -174,7 +174,11 @@ function UserRow({ user, isMe }: { user: User; isMe: boolean }) {
         <div className="text-muted-foreground">{user.email}</div>
         <Alert error={error} />
         {resetting && (
-          <ResetPassword user={user} onDone={() => setResetting(false)} />
+          <ResetPassword
+            userId={user.id}
+            label={label}
+            onDone={() => setResetting(false)}
+          />
         )}
       </td>
       <td className="py-1.5">{user.role === 'admin' ? 'Admin' : 'User'}</td>
@@ -223,20 +227,28 @@ function UserRow({ user, isMe }: { user: User; isMe: boolean }) {
   )
 }
 
-function ResetPassword({ user, onDone }: { user: User; onDone: () => void }) {
+function ResetPassword({
+  userId,
+  label,
+  onDone,
+}: {
+  userId: string
+  label: string
+  onDone: () => void
+}) {
   const resetPassword = useAction(api.users.resetPassword)
   const { error, attempt } = useAttempt()
-  const id = `${user.id}-password`
+  const id = `${userId}-password`
 
   return (
     <form
-      aria-label={`New password for ${user.username ?? user.name}`}
+      aria-label={`New password for ${label}`}
       className="flex flex-col gap-1.5 pt-2"
       onSubmit={(event) => {
         event.preventDefault()
-        const password = textOf(new FormData(event.currentTarget), 'password')
+        const password = formText(new FormData(event.currentTarget), 'password')
         void attempt(async () => {
-          await resetPassword({ userId: user.id, password })
+          await resetPassword({ userId, password })
           onDone()
         })
       }}
@@ -287,9 +299,9 @@ function ProviderForm({ provider }: { provider: Provider }) {
         void attempt(async () => {
           await update({
             providerId: provider._id,
-            name: textOf(data, 'name'),
-            baseUrl: textOf(data, 'baseUrl'),
-            apiKey: textOf(data, 'apiKey'),
+            name: formText(data, 'name'),
+            baseUrl: formText(data, 'baseUrl'),
+            apiKey: formText(data, 'apiKey'),
           })
           form.reset()
         })
