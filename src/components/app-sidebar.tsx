@@ -233,6 +233,13 @@ function useDebounced<T>(value: T, ms: number) {
   return debounced
 }
 
+/** Scrolls a shown Message to the center and focuses it, which flashes it. */
+export function jumpToMessage(id: string) {
+  const message = document.getElementById(id)
+  message?.scrollIntoView({ block: 'center' })
+  message?.focus({ preventScroll: true })
+}
+
 /** Thread search hits in place of the list: the title, then the best matching Message. */
 function SearchResults({ query }: { query: string }) {
   const hits = useQuery(api.search.threads, query ? { query } : 'skip')
@@ -263,6 +270,9 @@ function SearchResults({ query }: { query: string }) {
                 to="/chat/$threadId"
                 params={{ threadId: _id }}
                 hash={message._id}
+                // Clicked again, the URL stays the same and the Thread view
+                // gets no new hash to jump on, so jump here when it's shown.
+                onClick={() => jumpToMessage(message._id)}
                 className="mt-0.5 line-clamp-2 text-xs text-zinc-400 hover:text-zinc-200"
               >
                 <Highlight text={message.snippet} query={query} />

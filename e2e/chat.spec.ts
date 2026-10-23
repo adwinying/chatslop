@@ -290,15 +290,26 @@ test('Thread search finds a Message and jumps to it', async ({ page }) => {
   await page
     .getByRole('searchbox', { name: 'Search Threads' })
     .fill(`天気予報によると${stamp}日は晴れのち曇り`)
-  await page
+  const hit = page
     .getByRole('navigation', { name: 'Threads' })
     .getByRole('link', { name: new RegExp(`${stamp}日は晴れ`) })
     // The title can match too, while it's still the Prompt.
     .last()
-    .click()
+  await hit.click()
 
   await expect(page).toHaveURL(/\/chat\/\w+#\w+$/)
   const jumped = page.locator(':focus').getByRole('article', { name: 'Prompt' })
+  await expect(jumped).toHaveText(target)
+  await expect(jumped).toBeInViewport()
+
+  // The URL already has the hash, yet clicking the hit again still jumps.
+  const prompt = page
+    .getByRole('article', { name: 'Prompt' })
+    .filter({ hasText: target })
+  await prompt.hover()
+  await page.mouse.wheel(0, 10_000)
+  await expect(prompt).not.toBeInViewport()
+  await hit.click()
   await expect(jumped).toHaveText(target)
   await expect(jumped).toBeInViewport()
 })

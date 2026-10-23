@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import { Answer } from '~/components/answer'
-import { SidebarButton } from '~/components/app-sidebar'
+import { jumpToMessage, SidebarButton } from '~/components/app-sidebar'
 import {
   hasFiles,
   type Intake,
@@ -86,10 +86,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const hash = useLocation({ select: (location) => location.hash })
   const loaded = messages !== undefined
   useEffect(() => {
-    if (!loaded || !hash) return
-    const message = document.getElementById(hash)
-    message?.scrollIntoView({ block: 'center' })
-    message?.focus({ preventScroll: true })
+    if (loaded && hash) jumpToMessage(hash)
   }, [hash, loaded])
 
   return (
