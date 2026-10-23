@@ -178,7 +178,8 @@ export const insert = internalMutation({
   },
 })
 
-async function deleteAttachment(
+/** Deletes the Attachment with its blob. */
+export async function deleteAttachment(
   ctx: MutationCtx,
   attachment: Doc<'attachments'>,
 ) {

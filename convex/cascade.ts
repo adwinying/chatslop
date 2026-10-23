@@ -3,6 +3,7 @@ import type { MutationCtx } from '@/convex/_generated/server'
 import { ConvexError, v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
 import { internalMutation } from '@/convex/_generated/server'
+import { deleteAttachment } from '@/convex/attachments'
 import { liveAnswerOf, MAX_MESSAGES } from '@/convex/threads'
 
 /** Most Messages deleted per scheduled mutation, with their Attachments. */
@@ -45,8 +46,7 @@ export const deleteMessages = internalMutation({
         .withIndex('by_message', (q) => q.eq('messageId', message._id))
       for await (const attachment of attachments) {
         if (await nearLimits(ctx)) return next()
-        await ctx.storage.delete(attachment.storageId)
-        await ctx.db.delete('attachments', attachment._id)
+        await deleteAttachment(ctx, attachment)
       }
       await ctx.db.delete('messages', message._id)
       deleted++
@@ -79,8 +79,7 @@ export async function truncate(
       .query('attachments')
       .withIndex('by_message', (q) => q.eq('messageId', message._id))
     for await (const attachment of attachments) {
-      await ctx.storage.delete(attachment.storageId)
-      await ctx.db.delete('attachments', attachment._id)
+      await deleteAttachment(ctx, attachment)
     }
     await ctx.db.delete('messages', message._id)
   }
