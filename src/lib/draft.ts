@@ -4,6 +4,7 @@ import type { SetStateAction } from 'react'
 import { useSyncExternalStore } from 'react'
 
 export type DraftAttachment = FunctionReturnType<typeof api.attachments.add>
+export type Upload = { key: string; name: string; progress: number }
 
 const listeners = new Set<() => void>()
 
@@ -57,4 +58,25 @@ export function useDraftAttachments(key: string | undefined) {
       return next.length ? JSON.stringify(next) : ''
     })
   return [attachments, setAttachments] as const
+}
+
+const NO_UPLOADS: Upload[] = []
+const uploads = new Map<string, Upload[]>()
+
+/**
+ * The Draft's uploads in flight under `key`. Kept in memory, they outlive
+ * the Thread view, so Send still waits for them after a visit elsewhere.
+ */
+export function useDraftUploads(key: string | undefined) {
+  const read = () => (key && uploads.get(key)) || NO_UPLOADS
+  const list = useSyncExternalStore(subscribe, read, () => NO_UPLOADS)
+
+  const setList = (action: SetStateAction<Upload[]>) => {
+    if (!key) return
+    const next = typeof action === 'function' ? action(read()) : action
+    if (next.length) uploads.set(key, next)
+    else uploads.delete(key)
+    for (const listener of listeners) listener()
+  }
+  return [list, setList] as const
 }

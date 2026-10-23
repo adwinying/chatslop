@@ -1,11 +1,11 @@
 import type { Id } from '@/convex/_generated/dataModel'
-import type { ClipboardEvent, Dispatch, SetStateAction } from 'react'
-import type { DraftAttachment } from '~/lib/draft'
+import type { ClipboardEvent, Dispatch, DragEvent, SetStateAction } from 'react'
+import type { DraftAttachment, Upload } from '~/lib/draft'
 import { Dialog } from '@base-ui/react/dialog'
 import { useAction, useMutation } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { FileTextIcon, PaperclipIcon, XIcon } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import {
@@ -37,8 +37,11 @@ const TEXT_TYPES =
   'text/*,.md,.json,.jsonl,.yaml,.yml,.toml,.csv,.tsv,.xml,.sql,.sh,.ts,.tsx,.js,.jsx,.mjs,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.cs,.php,.lua,.log'
 
 type Attachment = Pick<DraftAttachment, '_id' | 'name' | 'mediaType' | 'size'>
-type Upload = { key: string; name: string; progress: number }
+type State<T> = readonly [T, Dispatch<SetStateAction<T>>]
 export type Intake = ReturnType<typeof useIntake>
+
+export const hasFiles = (event: DragEvent) =>
+  event.dataTransfer.types.includes('Files')
 
 const formatSize = (bytes: number) =>
   bytes < 1024 * 1024
@@ -53,16 +56,13 @@ const formatSize = (bytes: number) =>
  * server checks again on send, and the chips turn red once it's known.
  */
 export function useIntake(
-  [attachments, setAttachments]: readonly [
-    DraftAttachment[],
-    Dispatch<SetStateAction<DraftAttachment[]>>,
-  ],
+  [attachments, setAttachments]: State<DraftAttachment[]>,
+  [uploads, setUploads]: State<Upload[]>,
   readable: readonly AttachmentKind[] = ['image', 'pdf'],
 ) {
   const generateUploadUrl = useMutation(api.attachments.generateUploadUrl)
   const register = useAction(api.attachments.add)
   const deleteUnsent = useMutation(api.attachments.remove)
-  const [uploads, setUploads] = useState<Upload[]>([])
 
   const upload = async (file: File) => {
     const key = crypto.randomUUID()
@@ -107,6 +107,12 @@ export function useIntake(
         add([new File([text], 'Pasted text', { type: 'text/plain' })])
       else return
       event.preventDefault()
+    },
+    /** Takes dropped files, unless an intake inside took them. */
+    drop: (event: DragEvent) => {
+      if (event.defaultPrevented || !hasFiles(event)) return
+      event.preventDefault()
+      add([...event.dataTransfer.files])
     },
     remove: (id: Id<'attachments'>) => {
       setAttachments((list) => list.filter((a) => a._id !== id))

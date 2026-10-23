@@ -1,7 +1,7 @@
 import type { Id } from '@/convex/_generated/dataModel'
 import type { AttachmentKind } from '@/convex/intake'
 import type { Options } from '~/components/model-picker'
-import type { DraftAttachment } from '~/lib/draft'
+import type { DraftAttachment, Upload } from '~/lib/draft'
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -153,15 +153,21 @@ export function PromptEditor({
   onCancel: () => void
 }) {
   const [text, setText] = useState(initial)
-  const intake = useIntake(useState(attachments), readable)
+  const intake = useIntake(
+    useState(attachments),
+    useState<Upload[]>([]),
+    readable,
+  )
   const canSend =
     !disabled &&
     !intake.blockReason &&
     (text.trim() !== '' || intake.attachments.length > 0)
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- dropping is a pointer shortcut; Attach and paste serve keyboards.
     <form
       className="w-full max-w-[85%] rounded-2xl bg-zinc-800 p-2"
+      onDrop={intake.drop}
       onSubmit={(event) => {
         event.preventDefault()
         if (canSend)

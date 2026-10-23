@@ -4,19 +4,14 @@ import type { Part } from '@/convex/parts'
 import type { FunctionReturnType } from 'convex/server'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import {
-  type DragEvent,
-  Fragment,
-  type ReactNode,
-  useEffect,
-  useState,
-} from 'react'
+import { Fragment, type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import { Answer } from '~/components/answer'
 import { SidebarButton } from '~/components/app-sidebar'
 import {
+  hasFiles,
   type Intake,
   PromptAttachments,
   useIntake,
@@ -44,6 +39,7 @@ import {
   draftKey,
   useDraft,
   useDraftAttachments,
+  useDraftUploads,
 } from '~/lib/draft'
 import { cn } from '~/lib/utils'
 
@@ -73,7 +69,13 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const edit = useMutation(api.threads.edit)
   const lastAnswer = messages?.findLast((m) => m.role === 'assistant')
   const lastAnswerId = lastAnswer?._id
-  const intake = useIntake(useDraftAttachments(draft), model?.attachmentTypes)
+  const draftIntake = useIntake(
+    useDraftAttachments(draft),
+    useDraftUploads(draft),
+    model?.attachmentTypes,
+  )
+  // Until the Draft is known, an upload would have nowhere to go.
+  const intake = draft ? draftIntake : undefined
 
   // Another tab deleted it.
   useEffect(() => {
@@ -186,7 +188,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
           intake={intake}
           onSend={async (text) => {
             if (!model) return
-            const attachmentIds = intake.attachments.map((a) => a._id)
+            const attachmentIds = draftIntake.attachments.map((a) => a._id)
             const id = await send({
               threadId,
               text,
@@ -195,7 +197,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
               reasoningLevel: choices.reasoningLevel,
               webSearch: choices.webSearch,
             })
-            intake.setAttachments((list) =>
+            draftIntake.setAttachments((list) =>
               list.filter((a) => !attachmentIds.includes(a._id)),
             )
             if (!threadId)
@@ -211,15 +213,12 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   )
 }
 
-const hasFiles = (event: DragEvent) =>
-  event.dataTransfer.types.includes('Files')
-
 /** The Thread view, which attaches files dropped anywhere on it. */
 function DropZone({
   intake,
   children,
 }: {
-  intake: Intake
+  intake?: Intake
   children: ReactNode
 }) {
   const [dragging, setDragging] = useState(false)
@@ -229,7 +228,7 @@ function DropZone({
     <main
       className="relative flex min-w-0 flex-1 flex-col"
       onDragOver={(event) => {
-        if (!hasFiles(event)) return
+        if (!intake || !hasFiles(event)) return
         event.preventDefault()
         setDragging(true)
       }}
@@ -241,10 +240,8 @@ function DropZone({
           setDragging(false)
       }}
       onDrop={(event) => {
-        if (!hasFiles(event)) return
-        event.preventDefault()
         setDragging(false)
-        intake.add([...event.dataTransfer.files])
+        intake?.drop(event)
       }}
     >
       {children}

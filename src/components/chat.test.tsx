@@ -138,3 +138,56 @@ test('disables every message action, Copy too, while a Live answer exists', () =
     actions.map(() => true),
   )
 })
+
+/** Uploads that stay in flight: the upload URL never comes. */
+function stallUploads() {
+  mutations.set('attachments:generateUploadUrl', () => new Promise(() => {}))
+}
+const file = (name: string) => new File(['notes'], name, { type: 'text/plain' })
+
+test('takes files only once the Draft is known', () => {
+  renderThread()
+  expect(screen.queryByRole('button', { name: 'Attach' })).toBeNull()
+
+  cleanup()
+  queries.set('users:me', { id: 'u1', name: 'Ada' })
+  renderThread()
+  expect(screen.getByRole('button', { name: 'Attach' })).toBeTruthy()
+})
+
+test('Send keeps waiting for an upload after leaving the Thread and coming back', async () => {
+  stallUploads()
+  queries.set('users:me', { id: 'u2', name: 'Ada' })
+  renderThread()
+  fireEvent.change(screen.getByLabelText('Message'), {
+    target: { value: 'Read this' },
+  })
+  fireEvent.change(document.querySelector('input[type=file]')!, {
+    target: { files: [file('notes.txt')] },
+  })
+  await screen.findByLabelText('Uploading notes.txt')
+
+  cleanup()
+  renderThread()
+
+  expect(screen.getByLabelText('Uploading notes.txt')).toBeTruthy()
+  expect(
+    screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled'),
+  ).toBe(true)
+})
+
+test('a file dropped on the Prompt editor joins the edit, not the Draft', async () => {
+  stallUploads()
+  queries.set('users:me', { id: 'u3', name: 'Ada' })
+  renderThread()
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+
+  fireEvent.drop(screen.getByLabelText('Edit Prompt'), {
+    dataTransfer: { types: ['Files'], files: [file('dropped.txt')] },
+  })
+
+  const chip = await screen.findByLabelText('Uploading dropped.txt')
+  expect(
+    chip.closest('form')?.contains(screen.getByLabelText('Edit Prompt')),
+  ).toBe(true)
+})
