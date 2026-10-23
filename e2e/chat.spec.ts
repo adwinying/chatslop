@@ -283,3 +283,33 @@ test('a pasted image is sent, shows as a thumbnail, and only its owner can read 
   expect((await context.get(url)).status()).toBe(404)
   await context.dispose()
 })
+
+test('Thread search finds a Message and jumps to it', async ({ page }) => {
+  await logIn(page)
+  // Unique per run, since the dev database remembers earlier runs.
+  const stamp = Date.now()
+  const target = `明日の天気予報によると${stamp}日は晴れのち曇りでしょう`
+  await sendAndStop(page, target)
+  // Pushes the target out of view.
+  await sendAndStop(
+    page,
+    Array.from({ length: 60 }, (_, i) => `line ${i}`).join('\n'),
+  )
+  await page.getByRole('link', { name: 'New Chat' }).click()
+
+  // Mid-sentence, and over 16 search terms once bigrammed.
+  await page
+    .getByRole('searchbox', { name: 'Search Threads' })
+    .fill(`天気予報によると${stamp}日は晴れのち曇り`)
+  await page
+    .getByRole('navigation', { name: 'Threads' })
+    .getByRole('link', { name: new RegExp(`${stamp}日は晴れ`) })
+    // The title can match too, while it's still the Prompt.
+    .last()
+    .click()
+
+  await expect(page).toHaveURL(/\/chat\/\w+#\w+$/)
+  const jumped = page.locator(':focus').getByRole('article', { name: 'Prompt' })
+  await expect(jumped).toHaveText(target)
+  await expect(jumped).toBeInViewport()
+})

@@ -6,6 +6,7 @@ import {
   Loader2Icon,
   LogOutIcon,
   MenuIcon,
+  SearchIcon,
   SettingsIcon,
   XIcon,
 } from 'lucide-react'
@@ -18,6 +19,7 @@ import {
   useState,
 } from 'react'
 import { api } from '@/convex/_generated/api'
+import { queryPattern } from '@/convex/searchText'
 import {
   DeleteButton,
   PinButton,
@@ -29,6 +31,8 @@ import { authClient } from '~/lib/auth-client'
 import { cn } from '~/lib/utils'
 
 const PAGE_SIZE = 50
+/** Search results re-run whenever indexed documents change, so typing waits this long. */
+const SEARCH_DEBOUNCE_MS = 300
 
 const OpenSidebar = createContext<(opener: HTMLElement) => void>(() => {})
 
@@ -37,7 +41,10 @@ const OpenSidebar = createContext<(opener: HTMLElement) => void>(() => {})
  * navigation, and on phones its overlay closes when the page changes.
  */
 export function AppShell({ children }: { children: ReactNode }) {
-  const path = useLocation({ select: (location) => location.pathname })
+  // With the hash, so jumping to a Message in the open Thread closes it too.
+  const path = useLocation({
+    select: (location) => location.pathname + location.hash,
+  })
   const [opened, setOpened] = useState<{ opener: HTMLElement; path: string }>()
   const close = () => {
     opened?.opener.focus()
@@ -74,6 +81,8 @@ export function SidebarButton() {
 /** Persistent from `md` up; an overlay on phones while `open`. */
 function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const closeButton = useRef<HTMLButtonElement>(null)
+  const [query, setQuery] = useState('')
+  const debounced = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS)
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (open && event.key === 'Escape') onClose()
   })
@@ -125,7 +134,8 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             New Chat
           </Link>
         </div>
-        <ThreadList />
+        <SearchBox query={query} onChange={setQuery} />
+        {query.trim() ? <SearchResults query={debounced} /> : <ThreadList />}
         <UserFooter />
       </aside>
     </>
@@ -179,6 +189,105 @@ function ThreadList() {
         </Button>
       )}
     </nav>
+  )
+}
+
+function SearchBox({
+  query,
+  onChange,
+}: {
+  query: string
+  onChange: (query: string) => void
+}) {
+  return (
+    <div className="mx-3 mt-3 flex items-center gap-2 border-b border-sidebar-border pb-2 text-zinc-500">
+      <SearchIcon aria-hidden className="size-3.5 shrink-0" />
+      <input
+        type="search"
+        aria-label="Search Threads"
+        placeholder="Search your Threads…"
+        value={query}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500 [&::-webkit-search-cancel-button]:hidden"
+      />
+      {query && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Clear search"
+          onClick={() => onChange('')}
+        >
+          <XIcon />
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function useDebounced<T>(value: T, ms: number) {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), ms)
+    return () => clearTimeout(timer)
+  }, [value, ms])
+  return debounced
+}
+
+/** Thread search hits in place of the list: the title, then the best matching Message. */
+function SearchResults({ query }: { query: string }) {
+  const hits = useQuery(api.search.threads, query ? { query } : 'skip')
+
+  return (
+    <nav
+      aria-label="Threads"
+      aria-busy={hits === undefined}
+      className="flex-1 overflow-y-auto px-2 py-2 text-sm"
+    >
+      {hits?.length === 0 && (
+        <p className="px-3 py-6 text-center text-zinc-500">
+          No Threads match “{query}”.
+        </p>
+      )}
+      <ul>
+        {hits?.map(({ _id, title, message }) => (
+          <li key={_id} className="rounded-md px-2 py-1.5 hover:bg-zinc-800/60">
+            <Link
+              to="/chat/$threadId"
+              params={{ threadId: _id }}
+              className="block truncate font-medium text-zinc-300"
+            >
+              <Highlight text={title} query={query} />
+            </Link>
+            {message && (
+              <Link
+                to="/chat/$threadId"
+                params={{ threadId: _id }}
+                hash={message._id}
+                className="mt-0.5 line-clamp-2 text-xs text-zinc-400 hover:text-zinc-200"
+              >
+                <Highlight text={message.snippet} query={query} />
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+function Highlight({ text, query }: { text: string; query: string }) {
+  // Split on a capturing pattern, so the matches land at odd indexes.
+  const pieces = text.split(
+    new RegExp(`(${queryPattern(query).source})`, 'giu'),
+  )
+  return pieces.map((piece, i) =>
+    i % 2 ? (
+      <mark key={i} className="rounded bg-brand-500/30 text-brand-100">
+        {piece}
+      </mark>
+    ) : (
+      piece
+    ),
   )
 }
 

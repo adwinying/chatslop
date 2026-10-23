@@ -27,6 +27,7 @@ vi.mock('convex/react', () => ({
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => async () => {},
   useParams: () => ({}),
+  useLocation: () => '',
 }))
 
 afterEach(() => {
