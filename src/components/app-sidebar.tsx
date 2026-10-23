@@ -139,14 +139,17 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           </Link>
         </div>
         <SearchBox query={query} onChange={setQuery} />
-        {query.trim() ? <SearchResults query={debounced} /> : <ThreadList />}
+        {/* Hidden, not unmounted, while searching, so it keeps its loaded
+            pages and live results instead of falling back to the preload. */}
+        <ThreadList hidden={!!query.trim()} />
+        {query.trim() && <SearchResults query={debounced} />}
         <UserFooter />
       </aside>
     </>
   )
 }
 
-function ThreadList() {
+function ThreadList({ hidden }: { hidden: boolean }) {
   const preloaded = appRoute.useLoaderData()
   const pinned = orPreloaded(useQuery(api.threads.pinned), preloaded?.pinned)
   const { results, status, loadMore } = usePaginatedQuery(
@@ -167,6 +170,7 @@ function ThreadList() {
   return (
     <nav
       aria-label="Threads"
+      hidden={hidden}
       className="flex-1 overflow-y-auto px-2 py-2 text-sm"
     >
       {groups.map(

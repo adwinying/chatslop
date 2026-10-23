@@ -7,6 +7,8 @@ import { CONVEX_ORIGIN } from '~/lib/convex-origin'
 /** Enough to fill the sidebar and the bottom of the Thread view on first paint. */
 const PRELOAD_THREADS = 20
 const PRELOAD_MESSAGES = 5
+/** Past this, the page renders without the preload rather than wait on a stalled Convex. */
+const PRELOAD_TIMEOUT_MS = 500
 
 /**
  * Query results the server renders the first HTML with, so a reload doesn't
@@ -19,7 +21,11 @@ const preloader = <Args extends unknown[], T>(
   createIsomorphicFn()
     .server(async (token: string | null, ...args: Args) => {
       if (!token) return undefined
-      const convex = new ConvexHttpClient(CONVEX_ORIGIN, { auth: token })
+      const signal = AbortSignal.timeout(PRELOAD_TIMEOUT_MS)
+      const convex = new ConvexHttpClient(CONVEX_ORIGIN, {
+        auth: token,
+        fetch: (input, init) => fetch(input, { ...init, signal }),
+      })
       // Best effort: the live queries still load whatever fails here.
       return await load(convex, ...args).catch(() => undefined)
     })
