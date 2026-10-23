@@ -26,6 +26,7 @@ vi.mock('convex/react', () => ({
   useAction: () => async () => {},
 }))
 vi.mock('@tanstack/react-router', () => ({
+  getRouteApi: () => ({ useLoaderData: () => undefined }),
   useNavigate: () => async () => {},
   useParams: () => ({}),
   useLocation: ({ select }: { select: (at: typeof location) => unknown }) =>

@@ -1,6 +1,6 @@
 import type { Doc } from '@/convex/_generated/dataModel'
 import type { ReactNode } from 'react'
-import { Link, useLocation } from '@tanstack/react-router'
+import { getRouteApi, Link, useLocation } from '@tanstack/react-router'
 import { usePaginatedQuery, useQuery } from 'convex/react'
 import {
   Loader2Icon,
@@ -17,6 +17,7 @@ import {
   useEffectEvent,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { api } from '@/convex/_generated/api'
 import { queryPattern } from '@/convex/searchText'
@@ -28,11 +29,14 @@ import {
 } from '~/components/thread-actions'
 import { Button, buttonVariants } from '~/components/ui/button'
 import { authClient } from '~/lib/auth-client'
+import { orPreloaded } from '~/lib/preload'
 import { cn } from '~/lib/utils'
 
 const PAGE_SIZE = 50
 /** Search results re-run whenever indexed documents change, so typing waits this long. */
 const SEARCH_DEBOUNCE_MS = 300
+
+const appRoute = getRouteApi('/_app')
 
 const OpenSidebar = createContext<(opener: HTMLElement) => void>(() => {})
 
@@ -143,16 +147,21 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
 }
 
 function ThreadList() {
-  const pinned = useQuery(api.threads.pinned)
+  const preloaded = appRoute.useLoaderData()
+  const pinned = orPreloaded(useQuery(api.threads.pinned), preloaded?.pinned)
   const { results, status, loadMore } = usePaginatedQuery(
     api.threads.list,
     {},
     { initialNumItems: PAGE_SIZE },
   )
-  const live = new Set(useQuery(api.liveAnswers.threadIds))
+  const recent =
+    status === 'LoadingFirstPage' ? (preloaded?.threads ?? []) : results
+  const live = new Set(
+    orPreloaded(useQuery(api.liveAnswers.threadIds), preloaded?.liveThreadIds),
+  )
   const groups = [
     { label: 'Pinned', threads: pinned ?? [] },
-    ...dateGroups(results, useToday()),
+    ...dateGroups(recent, useToday(preloaded?.today)),
   ]
 
   return (
@@ -304,22 +313,28 @@ function Highlight({ text, query }: { text: string; query: string }) {
 const DAY = 86_400_000
 const startOfToday = () => new Date().setHours(0, 0, 0, 0)
 
-/** The start of the local day, moving on at midnight and when a sleeping tab wakes. */
-function useToday() {
-  const [today, setToday] = useState(startOfToday)
-  useEffect(() => {
-    const timer = setInterval(() => setToday(startOfToday()), 60_000)
-    return () => clearInterval(timer)
-  }, [])
-  return today
+const everyMinute = (tick: () => void) => {
+  const timer = setInterval(tick, 60_000)
+  return () => clearInterval(timer)
 }
 
-/** Today, Yesterday, Last 7 days, Last 30 days, then Older, by local day; empty groups included. */
+/**
+ * The start of the local day, moving on at midnight and when a sleeping tab
+ * wakes. Hydration keeps the server's day, whose timezone may differ.
+ */
+function useToday(serverToday?: number) {
+  return useSyncExternalStore(
+    everyMinute,
+    startOfToday,
+    () => serverToday ?? startOfToday(),
+  )
+}
+
+/** Today, Yesterday, Last 7 days, Last 30 days, then Older, from the start of `today`; empty groups included. */
 export function dateGroups<T extends { lastMessageAt: number }>(
   threads: T[],
-  now: number,
+  today: number,
 ) {
-  const today = new Date(now).setHours(0, 0, 0, 0)
   const groups = [
     { label: 'Today', since: today },
     { label: 'Yesterday', since: today - DAY },
@@ -389,7 +404,7 @@ async function signOut() {
 }
 
 function UserFooter() {
-  const me = useQuery(api.users.me)
+  const me = orPreloaded(useQuery(api.users.me), appRoute.useLoaderData()?.me)
 
   return (
     <div className="flex items-center gap-2 border-t border-sidebar-border p-3 text-sm">
