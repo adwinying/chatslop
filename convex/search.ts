@@ -118,7 +118,7 @@ async function reindexMessages(ctx: MutationCtx, page: Page) {
 /**
  * Rewrites each Thread's `searchTitle`, then each Message's `searchText`,
  * where it differs from what `toSearchText` gives now, a batch at a time.
- * Boot and `pnpm seed` run it, so old rows follow changes to `toSearchText`.
+ * `pnpm seed` runs it, so old rows follow changes to `toSearchText`.
  */
 export const reindex = internalMutation({
   args: {

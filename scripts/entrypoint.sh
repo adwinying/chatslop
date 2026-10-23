@@ -75,8 +75,6 @@ convex run seed:firstAdmin
 convex run seed:providers
 # Offline boots still come up; the daily cron syncs later.
 convex run modelSync:sync || echo "Model sync failed; the daily cron retries" >&2
-# Brings search fields up to date with toSearchText, in scheduled batches.
-convex run search:reindex
 
 node .output/server/index.mjs &
 app=$!
