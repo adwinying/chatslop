@@ -60,41 +60,58 @@ export async function viewThread(
 }
 
 /**
- * The Thread's finished Messages, oldest first: Answers with their Model's
- * name, Prompts with their Attachments, which the browser reads by ID alone.
- * Null while signed out.
+ * Answers with their Model's name, Prompts with their Attachments, which the
+ * browser reads by ID alone.
  */
+async function forView(ctx: QueryCtx, messages: Doc<'messages'>[]) {
+  const names = new Map<Id<'models'>, string>()
+  for (const m of messages)
+    if (m.role === 'assistant' && !names.has(m.modelId))
+      // A referenced Model can't be deleted.
+      names.set(m.modelId, (await ctx.db.get('models', m.modelId))?.name ?? '')
+  return await Promise.all(
+    messages.map(async (m) =>
+      m.role === 'assistant'
+        ? { ...m, modelName: names.get(m.modelId)! }
+        : {
+            ...m,
+            attachments: (await attachmentsOf(ctx, m._id)).map(
+              ({ _id, name, mediaType, size }) => ({
+                _id,
+                name,
+                mediaType,
+                size,
+              }),
+            ),
+          },
+    ),
+  )
+}
+
+/** The Thread's newest finished Messages, oldest first. Null while signed out. */
 export const messages = query({
   args: { threadId: v.id('threads') },
   handler: async (ctx, { threadId }) => {
     const user = await authComponent.safeGetAuthUser(ctx)
     if (!user || !(await viewThread(ctx, threadId, user._id))) return null
-    const latest = await latestMessages(ctx, threadId)
-    const names = new Map<Id<'models'>, string>()
-    for (const m of latest)
-      if (m.role === 'assistant' && !names.has(m.modelId))
-        // A referenced Model can't be deleted.
-        names.set(
-          m.modelId,
-          (await ctx.db.get('models', m.modelId))?.name ?? '',
-        )
-    return await Promise.all(
-      latest.map(async (m) =>
-        m.role === 'assistant'
-          ? { ...m, modelName: names.get(m.modelId)! }
-          : {
-              ...m,
-              attachments: (await attachmentsOf(ctx, m._id)).map(
-                ({ _id, name, mediaType, size }) => ({
-                  _id,
-                  name,
-                  mediaType,
-                  size,
-                }),
-              ),
-            },
-      ),
-    )
+    return await forView(ctx, await latestMessages(ctx, threadId))
+  },
+})
+
+/**
+ * One of the Thread's Messages by the ID in the URL hash, so a Thread search
+ * hit older than `messages` still shows. Null unless it's in the Thread.
+ */
+export const message = query({
+  args: { threadId: v.id('threads'), messageId: v.string() },
+  handler: async (ctx, { threadId, messageId }) => {
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user || !(await viewThread(ctx, threadId, user._id))) return null
+    const id = ctx.db.normalizeId('messages', messageId)
+    const target = id && (await ctx.db.get('messages', id))
+    if (target?.threadId !== threadId) return null
+    const [shown] = await forView(ctx, [target])
+    return shown!
   },
 })
 

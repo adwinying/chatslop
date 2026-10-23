@@ -16,6 +16,7 @@ import { Chat } from '~/components/chat'
 const queries = vi.hoisted(() => new Map<string, unknown>())
 /** Mutations besides the no-ops, by function name. */
 const mutations = vi.hoisted(() => new Map<string, () => Promise<unknown>>())
+const location = vi.hoisted(() => ({ hash: '' }))
 
 vi.mock('convex/react', () => ({
   useQuery: (query: FunctionReference<'query'>) =>
@@ -27,13 +28,15 @@ vi.mock('convex/react', () => ({
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => async () => {},
   useParams: () => ({}),
-  useLocation: () => '',
+  useLocation: ({ select }: { select: (at: typeof location) => unknown }) =>
+    select(location),
 }))
 
 afterEach(() => {
   cleanup()
   queries.clear()
   mutations.clear()
+  location.hash = ''
 })
 
 const prompt = (id: string) => ({
@@ -77,6 +80,21 @@ test("marks where the latest Answer's Context starts", () => {
   const a2 = screen.getByText('a2').closest('article')!
   expect(divider!.compareDocumentPosition(a2)).toBe(
     Node.DOCUMENT_POSITION_PRECEDING,
+  )
+})
+
+test('jumps to a search hit older than the newest Messages, shown above them', () => {
+  Element.prototype.scrollIntoView = vi.fn<() => void>()
+  location.hash = 'p1'
+  queries.set('threads:messages', [prompt('p2'), answer('a2')])
+  queries.set('threads:message', prompt('p1'))
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the mocked queries ignore it.
+  render(<Chat threadId={'t' as Id<'threads'>} />)
+
+  const hit = screen.getByText('p1').closest('article')!
+  expect(hit.parentElement).toBe(document.activeElement)
+  expect(hit.compareDocumentPosition(screen.getByText('p2'))).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
   )
 })
 

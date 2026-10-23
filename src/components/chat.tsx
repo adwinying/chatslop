@@ -55,7 +55,16 @@ async function truncate(run: () => Promise<number>) {
 export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const navigate = useNavigate()
   const args = threadId ? { threadId } : 'skip'
-  const messages = useQuery(api.threads.messages, args)
+  // A Thread search hit links to its Message by hash, which can be older
+  // than the newest Messages, so it loads on its own.
+  const hash = useLocation({ select: (location) => location.hash })
+  const latest = useQuery(api.threads.messages, args)
+  const hitArgs = threadId && hash ? { threadId, messageId: hash } : 'skip'
+  const hit = useQuery(api.threads.message, hitArgs)
+  const messages =
+    hit && latest && !latest.some((m) => m._id === hit._id)
+      ? [hit, ...latest]
+      : latest
   const live = useQuery(api.liveAnswers.get, args)
   const send = useMutation(api.threads.send)
   const stop = useMutation(api.threads.stop)
@@ -82,9 +91,9 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
     if (deleted) void navigate({ to: '/' })
   }, [deleted, navigate])
 
-  // A Thread search hit links to its Message by hash; jump there once loaded.
-  const hash = useLocation({ select: (location) => location.hash })
-  const loaded = messages !== undefined
+  // Jump to the search hit once loaded.
+  const loaded =
+    latest !== undefined && (hitArgs === 'skip' || hit !== undefined)
   useEffect(() => {
     if (loaded && hash) jumpToMessage(hash)
   }, [hash, loaded])
