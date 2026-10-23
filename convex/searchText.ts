@@ -20,14 +20,31 @@ function bigrams(run: string) {
   return ` ${[...pairs, chars.at(-1)].join(' ')} `
 }
 
-/** Markdown as plain text: code content stays, syntax goes. */
-export const plainText = (markdown: string) =>
-  markdown
-    .replace(/^\s*(```|~~~).*$/gm, '')
-    .replace(/`([^`\n]*)`/g, '$1')
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/(\*\*|\*|~~)(\S.*?\S|\S)\1/g, '$2')
-    .replace(/^\s*(#{1,6}|[-*+]|\d+\.|>)\s+/gm, '')
+const FENCE = /^\s*(?:```|~~~).*$/m
+const CODE_SPAN = /`([^`\n]*)`/g
+/** Set-aside code, as its index between private-use characters that no Markdown syntax matches. */
+const KEPT = /\uE000(\d+)\uE001/g
+
+/**
+ * Markdown as plain text: code content stays, syntax goes. Code is set aside
+ * first, so the other replacements can't reach inside it.
+ */
+export function plainText(markdown: string) {
+  const code: string[] = []
+  const keep = (text: string) => `\uE000${code.push(text) - 1}\uE001`
+  return (
+    markdown
+      // Every other piece lies between an opening and a closing fence.
+      .split(FENCE)
+      .map((piece, i) => (i % 2 ? keep(piece) : piece))
+      .join('')
+      .replace(CODE_SPAN, (_, text: string) => keep(text))
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/(\*\*|\*|~~)(\S.*?\S|\S)\1/g, '$2')
+      .replace(/^\s*(#{1,6}|[-*+]|\d+\.|>)\s+/gm, '')
+      .replace(KEPT, (kept, i: string) => code[Number(i)] ?? kept)
+  )
+}
 
 /** What the search indexes hold, and what queries are matched with. */
 export const toSearchText = (text: string) =>

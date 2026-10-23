@@ -175,6 +175,28 @@ describe('search.threads', () => {
     expect(hit?.message?.snippet).toBe('Steps Run pnpm build first pnpm start')
   })
 
+  test('keeps Markdown syntax inside code as code content', async () => {
+    const session = await signedIn()
+    await converse(
+      session,
+      'Fenced',
+      '```js\nconst pattern = "[name](target)";\n# not a heading\n```',
+    )
+    await converse(session, 'Inline', 'Call `fn(*args, **kwargs)` here.')
+
+    const { as } = session
+    const [fenced] = await as.query(api.search.threads, {
+      query: 'pattern = "[name](target)"',
+    })
+    expect(fenced?.message?.snippet).toBe(
+      'const pattern = "[name](target)"; # not a heading',
+    )
+    const [inline] = await as.query(api.search.threads, {
+      query: 'fn(*args, **kwargs)',
+    })
+    expect(inline?.message?.snippet).toBe('Call fn(*args, **kwargs) here.')
+  })
+
   test('caps the hits at 20 Threads', async () => {
     const session = await signedIn()
     for (let i = 0; i < 25; i++)
