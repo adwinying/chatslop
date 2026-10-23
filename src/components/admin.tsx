@@ -1,7 +1,7 @@
 import type { Doc } from '@/convex/_generated/dataModel'
 import type { FunctionReturnType } from 'convex/server'
 import { Navigate } from '@tanstack/react-router'
-import { useMutation, useQuery } from 'convex/react'
+import { useAction, useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { RefreshCwIcon, Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
@@ -15,8 +15,9 @@ import { Label } from '~/components/ui/label'
 const listArgs = () => ({ since: listedSince(new Date()) })
 
 type Provider = FunctionReturnType<typeof api.providers.list>[number]
+type User = FunctionReturnType<typeof api.users.list>[number]
 
-/** Providers, Models and the Title Model. Convex refuses non-Admins too. */
+/** Users, Providers, Models and the Title Model. Convex refuses non-Admins too. */
 export function Admin() {
   const me = useQuery(api.users.me)
   if (me === undefined) return null
@@ -26,6 +27,7 @@ export function Admin() {
     <main className="flex-1 overflow-y-auto px-4 py-8">
       <div className="mx-auto flex max-w-3xl flex-col gap-10">
         <h1 className="text-xl font-semibold">Admin</h1>
+        <Users myId={me.id} />
         <Providers />
         <TitleModel />
         <Models />
@@ -61,6 +63,201 @@ function Alert({ error }: { error: string | null }) {
   )
 }
 
+/** The form's text field, or '' when missing. */
+const textOf = (data: FormData, name: string) => {
+  const value = data.get(name)
+  return typeof value === 'string' ? value : ''
+}
+
+function Users({ myId }: { myId: string }) {
+  const users = useQuery(api.users.list)
+  const create = useAction(api.users.create)
+  const { error, attempt } = useAttempt()
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="font-semibold">Users</h2>
+      <form
+        aria-label="New User"
+        className="flex flex-col gap-3 rounded-lg border border-border p-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          const form = event.currentTarget
+          const data = new FormData(form)
+          void attempt(async () => {
+            await create({
+              username: textOf(data, 'username'),
+              email: textOf(data, 'email'),
+              password: textOf(data, 'password'),
+            })
+            form.reset()
+          })
+        }}
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="new-user-username">Username</Label>
+            <Input
+              id="new-user-username"
+              name="username"
+              autoComplete="off"
+              required
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="new-user-email">Email</Label>
+            <Input
+              id="new-user-email"
+              name="email"
+              type="email"
+              autoComplete="off"
+              placeholder="Optional"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="new-user-password">Password</Label>
+            <Input
+              id="new-user-password"
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              required
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Alert error={error} />
+          <Button type="submit" className="ml-auto">
+            Create
+          </Button>
+        </div>
+      </form>
+      <table className="w-full text-left text-xs">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="py-1 font-normal">User</th>
+            <th className="py-1 font-normal">Role</th>
+            <th>
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {users?.map((user) => (
+            <UserRow key={user.id} user={user} isMe={user.id === myId} />
+          ))}
+        </tbody>
+      </table>
+    </section>
+  )
+}
+
+function UserRow({ user, isMe }: { user: User; isMe: boolean }) {
+  const disable = useAction(api.users.disable)
+  const enable = useAction(api.users.enable)
+  const promote = useAction(api.users.promote)
+  const remove = useAction(api.users.remove)
+  const [resetting, setResetting] = useState(false)
+  const { error, attempt } = useAttempt()
+  const label = user.username ?? user.name
+  const target = { userId: user.id }
+
+  return (
+    <tr className="border-t border-border align-top">
+      <td className="py-1.5">
+        <div>
+          {label}
+          {user.banned && (
+            <span className="text-muted-foreground"> · Disabled</span>
+          )}
+        </div>
+        <div className="text-muted-foreground">{user.email}</div>
+        <Alert error={error} />
+        {resetting && (
+          <ResetPassword user={user} onDone={() => setResetting(false)} />
+        )}
+      </td>
+      <td className="py-1.5">{user.role === 'admin' ? 'Admin' : 'User'}</td>
+      <td className="py-1.5">
+        <div className="flex justify-end gap-1">
+          <Button variant="ghost" onClick={() => setResetting(!resetting)}>
+            Reset password
+          </Button>
+          {user.role !== 'admin' && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (confirm(`Make ${label} an Admin?`))
+                  void attempt(() => promote(target))
+              }}
+            >
+              Make Admin
+            </Button>
+          )}
+          {!isMe && (
+            <>
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  void attempt(() =>
+                    user.banned ? enable(target) : disable(target),
+                  )
+                }
+              >
+                {user.banned ? 'Enable' : 'Disable'}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (confirm(`Delete ${label} and all their Threads?`))
+                    void attempt(() => remove(target))
+                }}
+              >
+                Delete
+              </Button>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function ResetPassword({ user, onDone }: { user: User; onDone: () => void }) {
+  const resetPassword = useAction(api.users.resetPassword)
+  const { error, attempt } = useAttempt()
+  const id = `${user.id}-password`
+
+  return (
+    <form
+      aria-label={`New password for ${user.username ?? user.name}`}
+      className="flex flex-col gap-1.5 pt-2"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const password = textOf(new FormData(event.currentTarget), 'password')
+        void attempt(async () => {
+          await resetPassword({ userId: user.id, password })
+          onDone()
+        })
+      }}
+    >
+      <Label htmlFor={id}>New password</Label>
+      <div className="flex gap-2">
+        <Input
+          id={id}
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          required
+          className="max-w-xs"
+        />
+        <Button type="submit">Save</Button>
+      </div>
+      <Alert error={error} />
+    </form>
+  )
+}
+
 function Providers() {
   const providers = useQuery(api.providers.list)
   return (
@@ -87,16 +284,12 @@ function ProviderForm({ provider }: { provider: Provider }) {
         event.preventDefault()
         const form = event.currentTarget
         const data = new FormData(form)
-        const text = (name: string) => {
-          const value = data.get(name)
-          return typeof value === 'string' ? value : ''
-        }
         void attempt(async () => {
           await update({
             providerId: provider._id,
-            name: text('name'),
-            baseUrl: text('baseUrl'),
-            apiKey: text('apiKey'),
+            name: textOf(data, 'name'),
+            baseUrl: textOf(data, 'baseUrl'),
+            apiKey: textOf(data, 'apiKey'),
           })
           form.reset()
         })
