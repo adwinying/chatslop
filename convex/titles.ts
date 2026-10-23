@@ -7,7 +7,7 @@ import {
   internalQuery,
 } from '@/convex/_generated/server'
 import { modelCall } from '@/convex/llm'
-import { titled } from '@/convex/searchText'
+import { withSearchTitle } from '@/convex/searchText'
 import { titleModelId } from '@/convex/settings'
 import { TITLE_LENGTH } from '@/convex/threads'
 
@@ -69,7 +69,7 @@ export const save = internalMutation({
     if (!thread?.titlePending) return
     await ctx.db.patch('threads', threadId, {
       titlePending: false,
-      ...(title && titled(title)),
+      ...(title && withSearchTitle(title)),
     })
   },
 })

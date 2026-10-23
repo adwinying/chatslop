@@ -34,7 +34,7 @@ export const toSearchText = (text: string) =>
   plainText(text).replace(CJK_RUN, bigrams)
 
 /** A title with the field `search_title` indexes. */
-export const titled = (title: string) => ({
+export const withSearchTitle = (title: string) => ({
   title,
   searchTitle: toSearchText(title),
 })

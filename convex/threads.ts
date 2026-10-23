@@ -16,7 +16,7 @@ import { STALE_MS } from '@/convex/liveAnswers'
 import { usableModel } from '@/convex/models'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import schema from '@/convex/schema'
-import { messageText, titled, toSearchText } from '@/convex/searchText'
+import { messageText, withSearchTitle, toSearchText } from '@/convex/searchText'
 import { updateSettings } from '@/convex/userSettings'
 
 /** Messages per Thread that the view shows and the Context holds, newest kept. */
@@ -235,7 +235,7 @@ export const send = mutation({
     } else {
       threadId = await ctx.db.insert('threads', {
         userId: user._id,
-        ...titled(fallbackTitle(text, attachments)),
+        ...withSearchTitle(fallbackTitle(text, attachments)),
         titlePending: true,
         pinned: false,
         lastMessageAt: Date.now(),
@@ -392,7 +392,7 @@ export const rename = mutation({
     const title = args.title.trim().slice(0, TITLE_LENGTH)
     if (!title) throw new ConvexError('Write a title first')
     await ctx.db.patch('threads', threadId, {
-      ...titled(title),
+      ...withSearchTitle(title),
       titlePending: false,
     })
     return null

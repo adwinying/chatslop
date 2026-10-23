@@ -31,7 +31,7 @@ const hitValidator = v.object({
 })
 
 /** The Message's searchable text, Attachment names included. */
-async function searchable(ctx: QueryCtx, message: Doc<'messages'>) {
+async function loadMessageText(ctx: QueryCtx, message: Doc<'messages'>) {
   const names =
     message.role === 'user'
       ? (await attachmentsOf(ctx, message._id)).map((a) => a.name)
@@ -73,7 +73,10 @@ export const threads = query({
     for (const message of messageHits) {
       const hit = found.get(message.threadId)
       if (hit?.message || (!hit && found.size >= MAX_THREADS)) continue
-      const text = snippet(plainText(await searchable(ctx, message)), pattern)
+      const text = snippet(
+        plainText(await loadMessageText(ctx, message)),
+        pattern,
+      )
       if (!text) continue
       const matched = { _id: message._id, snippet: text }
       if (hit) {
@@ -108,7 +111,7 @@ async function reindexThreads(ctx: MutationCtx, page: Page) {
 async function reindexMessages(ctx: MutationCtx, page: Page) {
   const result = await ctx.db.query('messages').paginate(page)
   for (const message of result.page) {
-    const fresh = toSearchText(await searchable(ctx, message))
+    const fresh = toSearchText(await loadMessageText(ctx, message))
     if (fresh !== message.searchText)
       await ctx.db.patch('messages', message._id, { searchText: fresh })
   }
