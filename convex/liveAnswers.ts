@@ -9,6 +9,7 @@ import {
   internalQuery,
   query,
 } from '@/convex/_generated/server'
+import { attachmentsOf } from '@/convex/attachments'
 import { authComponent } from '@/convex/auth'
 import { partsValidator } from '@/convex/parts'
 import { timingValidator, usageValidator } from '@/convex/schema'
@@ -61,9 +62,27 @@ export const context = internalQuery({
       model,
       provider,
       // Errored Answers stay visible but out of Context; the User regenerates them.
-      messages: messages
-        .filter((m) => m.role === 'user' || m.status !== 'error')
-        .map(({ role, parts }) => ({ role, parts })),
+      messages: await Promise.all(
+        messages
+          .filter((m) => m.role === 'user' || m.status !== 'error')
+          .map(async ({ _id, role, parts }) => ({
+            _id,
+            role,
+            parts,
+            attachments:
+              role === 'user'
+                ? await Promise.all(
+                    (await attachmentsOf(ctx, _id)).map(async (a) => ({
+                      ...a,
+                      missing: !(await ctx.db.system.get(
+                        '_storage',
+                        a.storageId,
+                      )),
+                    })),
+                  )
+                : [],
+          })),
+      ),
     }
   },
 })
@@ -95,6 +114,7 @@ const outcome = v.object({
   error: v.optional(v.string()),
   usage: v.optional(usageValidator),
   timing: v.optional(timingValidator),
+  contextStartMessageId: v.optional(v.id('messages')),
 })
 
 export const finish = internalMutation({
@@ -133,7 +153,7 @@ export const expire = internalMutation({
 async function finalize(
   ctx: MutationCtx,
   live: Doc<'liveAnswers'>,
-  { parts, error, usage, timing }: Infer<typeof outcome>,
+  { parts, error, usage, timing, contextStartMessageId }: Infer<typeof outcome>,
 ) {
   await ctx.db.insert('messages', {
     threadId: live.threadId,
@@ -148,6 +168,7 @@ async function finalize(
     error,
     usage,
     timing,
+    contextStartMessageId,
   })
   await ctx.db.delete('liveAnswers', live._id)
   await ctx.db.patch('threads', live.threadId, { lastMessageAt: Date.now() })

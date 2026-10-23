@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppChatThreadIdRouteImport } from './routes/_app/chat.$threadId'
+import { Route as ApiAttachmentsIdRouteImport } from './routes/api/attachments/$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const AppRoute = AppRouteImport.update({
@@ -40,6 +41,11 @@ const AppChatThreadIdRoute = AppChatThreadIdRouteImport.update({
   path: '/chat/$threadId',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiAttachmentsIdRoute = ApiAttachmentsIdRouteImport.update({
+  id: '/api/attachments/$id',
+  path: '/api/attachments/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/admin': typeof AppAdminRoute
   '/chat/$threadId': typeof AppChatThreadIdRoute
+  '/api/attachments/$id': typeof ApiAttachmentsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -58,6 +65,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AppAdminRoute
   '/': typeof AppIndexRoute
   '/chat/$threadId': typeof AppChatThreadIdRoute
+  '/api/attachments/$id': typeof ApiAttachmentsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -67,13 +75,26 @@ export interface FileRoutesById {
   '/_app/admin': typeof AppAdminRoute
   '/_app/': typeof AppIndexRoute
   '/_app/chat/$threadId': typeof AppChatThreadIdRoute
+  '/api/attachments/$id': typeof ApiAttachmentsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/admin' | '/chat/$threadId' | '/api/auth/$'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/admin'
+    | '/chat/$threadId'
+    | '/api/attachments/$id'
+    | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/admin' | '/' | '/chat/$threadId' | '/api/auth/$'
+  to:
+    | '/login'
+    | '/admin'
+    | '/'
+    | '/chat/$threadId'
+    | '/api/attachments/$id'
+    | '/api/auth/$'
   id:
     | '__root__'
     | '/_app'
@@ -81,12 +102,14 @@ export interface FileRouteTypes {
     | '/_app/admin'
     | '/_app/'
     | '/_app/chat/$threadId'
+    | '/api/attachments/$id'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiAttachmentsIdRoute: typeof ApiAttachmentsIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -127,6 +150,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppChatThreadIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/attachments/$id': {
+      id: '/api/attachments/$id'
+      path: '/api/attachments/$id'
+      fullPath: '/api/attachments/$id'
+      preLoaderRoute: typeof ApiAttachmentsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -154,6 +184,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiAttachmentsIdRoute: ApiAttachmentsIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

@@ -1,9 +1,10 @@
-import type { Id } from '@/convex/_generated/dataModel'
+import type { Doc, Id } from '@/convex/_generated/dataModel'
 import type { MutationCtx } from '@/convex/_generated/server'
-import { v } from 'convex/values'
+import { ConvexError, v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
 import { internalMutation } from '@/convex/_generated/server'
-import { liveAnswerOf } from '@/convex/threads'
+import { deleteAttachment } from '@/convex/attachments'
+import { liveAnswerOf, MAX_MESSAGES } from '@/convex/threads'
 
 /** Most Messages deleted per scheduled mutation, with their Attachments. */
 export const CASCADE_BATCH = 100
@@ -45,14 +46,45 @@ export const deleteMessages = internalMutation({
         .withIndex('by_message', (q) => q.eq('messageId', message._id))
       for await (const attachment of attachments) {
         if (await nearLimits(ctx)) return next()
-        await ctx.storage.delete(attachment.storageId)
-        await ctx.db.delete('attachments', attachment._id)
+        await deleteAttachment(ctx, attachment)
       }
       await ctx.db.delete('messages', message._id)
       deleted++
     }
   },
 })
+
+/**
+ * Deletes the Messages after `message`, and `message` too unless kept, with
+ * their Attachments and blobs. Returns how many Messages went. Only Messages
+ * the view shows can be truncated, which bounds the work to one transaction.
+ */
+export async function truncate(
+  ctx: MutationCtx,
+  { threadId, _creationTime }: Doc<'messages'>,
+  { keep }: { keep: boolean },
+) {
+  const messages = await ctx.db
+    .query('messages')
+    .withIndex('by_thread', (q) =>
+      keep
+        ? q.eq('threadId', threadId).gt('_creationTime', _creationTime)
+        : q.eq('threadId', threadId).gte('_creationTime', _creationTime),
+    )
+    .take(MAX_MESSAGES + 1)
+  if (messages.length > MAX_MESSAGES)
+    throw new ConvexError('That Message is too far back to change')
+  for (const message of messages) {
+    const attachments = ctx.db
+      .query('attachments')
+      .withIndex('by_message', (q) => q.eq('messageId', message._id))
+    for await (const attachment of attachments) {
+      await deleteAttachment(ctx, attachment)
+    }
+    await ctx.db.delete('messages', message._id)
+  }
+  return messages.length
+}
 
 async function nearLimits(ctx: MutationCtx) {
   const metrics = await ctx.meta.getTransactionMetrics()

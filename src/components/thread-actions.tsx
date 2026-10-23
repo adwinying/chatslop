@@ -12,16 +12,17 @@ import { cn } from '~/lib/utils'
 
 type Thread = Pick<Doc<'threads'>, '_id' | 'title' | 'pinned'>
 
-/** Runs a mutation, toasting its ConvexError message if it fails. */
-async function attempt(run: () => Promise<unknown>) {
+/** Runs a mutation, toasting its ConvexError message if it fails. Undefined then. */
+export async function attempt<T>(run: () => Promise<T>) {
   try {
-    await run()
+    return await run()
   } catch (cause) {
     toast.error(
       cause instanceof ConvexError && typeof cause.data === 'string'
         ? cause.data
         : 'Something went wrong. Try again.',
     )
+    return undefined
   }
 }
 

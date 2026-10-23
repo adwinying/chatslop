@@ -1,5 +1,6 @@
-import type { Id } from '@/convex/_generated/dataModel'
-import type { QueryCtx } from '@/convex/_generated/server'
+import type { Doc, Id } from '@/convex/_generated/dataModel'
+import type { MutationCtx, QueryCtx } from '@/convex/_generated/server'
+import type { Infer } from 'convex/values'
 import {
   paginationOptsValidator,
   paginationResultValidator,
@@ -7,8 +8,10 @@ import {
 import { ConvexError, v } from 'convex/values'
 import { internal } from '@/convex/_generated/api'
 import { mutation, query } from '@/convex/_generated/server'
+import { attachmentsOf, link, sendable } from '@/convex/attachments'
 import { authComponent } from '@/convex/auth'
-import { deleteThread } from '@/convex/cascade'
+import { deleteThread, truncate } from '@/convex/cascade'
+import { kindOf } from '@/convex/intake'
 import { STALE_MS } from '@/convex/liveAnswers'
 import { usableModel } from '@/convex/models'
 import { reasoningLevelFor } from '@/convex/reasoning'
@@ -55,7 +58,11 @@ export async function viewThread(
   return await ownThread(ctx, threadId, userId)
 }
 
-/** The Thread's finished Messages, oldest first, Answers with their Model's name. Null while signed out. */
+/**
+ * The Thread's finished Messages, oldest first: Answers with their Model's
+ * name, Prompts with their Attachments, which the browser reads by ID alone.
+ * Null while signed out.
+ */
 export const messages = query({
   args: { threadId: v.id('threads') },
   handler: async (ctx, { threadId }) => {
@@ -70,11 +77,128 @@ export const messages = query({
           m.modelId,
           (await ctx.db.get('models', m.modelId))?.name ?? '',
         )
-    return latest.map((m) =>
-      m.role === 'assistant' ? { ...m, modelName: names.get(m.modelId)! } : m,
+    return await Promise.all(
+      latest.map(async (m) =>
+        m.role === 'assistant'
+          ? { ...m, modelName: names.get(m.modelId)! }
+          : {
+              ...m,
+              attachments: (await attachmentsOf(ctx, m._id)).map(
+                ({ _id, name, mediaType, size }) => ({
+                  _id,
+                  name,
+                  mediaType,
+                  size,
+                }),
+              ),
+            },
+      ),
     )
   },
 })
+
+/** The Model, Reasoning level and Web search an Answer is made with. */
+const choicesValidator = v.object({
+  modelId: v.id('models'),
+  reasoningLevel: v.optional(v.string()),
+  webSearch: v.boolean(),
+})
+type Choices = Infer<typeof choicesValidator>
+
+/** The User's Thread, refused while it has a Live answer. */
+async function idleThread(
+  ctx: QueryCtx,
+  threadId: Id<'threads'>,
+  userId: string,
+) {
+  const thread = await ownThread(ctx, threadId, userId)
+  if (await liveAnswerOf(ctx, threadId))
+    throw new ConvexError('Wait for the Answer or stop it first')
+  return thread
+}
+
+/** The choices, with the Model checked and the Reasoning level re-resolved for it. */
+async function usableChoices(
+  ctx: QueryCtx,
+  isAdmin: boolean,
+  { modelId, reasoningLevel, webSearch }: Choices,
+) {
+  const model = await usableModel(ctx, modelId, isAdmin)
+  return {
+    modelId: model._id,
+    reasoningLevel: reasoningLevelFor(model.reasoningLevels, reasoningLevel),
+    webSearch,
+  }
+}
+
+/** Inserts a Live answer made with the choices and starts the action writing it. */
+async function startAnswer(
+  ctx: MutationCtx,
+  threadId: Id<'threads'>,
+  userId: string,
+  choices: Choices,
+) {
+  const now = Date.now()
+  const liveAnswerId = await ctx.db.insert('liveAnswers', {
+    threadId,
+    userId,
+    ...choices,
+    parts: [],
+    stopRequested: false,
+    lastWriteAt: now,
+  })
+  await ctx.scheduler.runAfter(0, internal.answer.run, { liveAnswerId })
+  await ctx.scheduler.runAfter(STALE_MS, internal.liveAnswers.expire, {
+    liveAnswerId,
+  })
+  await ctx.db.patch('threads', threadId, { lastMessageAt: now })
+}
+
+/** Remembers the picked choices for the Thread and the User's next Thread. */
+async function remember(
+  ctx: MutationCtx,
+  threadId: Id<'threads'>,
+  userId: string,
+  { modelId, reasoningLevel, webSearch }: Choices,
+) {
+  await ctx.db.patch('threads', threadId, { modelId })
+  await updateSettings(ctx, userId, {
+    lastModelId: modelId,
+    lastWebSearch: webSearch,
+    // A Model without levels leaves the remembered one for the next Model.
+    ...(reasoningLevel && { lastReasoningLevel: reasoningLevel }),
+  })
+}
+
+/** The Prompt's text and what's stored for it. An Attachment-only Prompt keeps no text part. */
+function promptFields(written: string, attachments: Doc<'attachments'>[]) {
+  const text = written.trim()
+  if (!text && !attachments.length)
+    throw new ConvexError('Write a Prompt first')
+  return {
+    text,
+    fields: {
+      parts: text ? [{ type: 'text' as const, text }] : [],
+      // Filenames, not contents, are searchable and seen by the Title Model.
+      searchText: [text, ...attachments.map((a) => a.name)]
+        .filter(Boolean)
+        .join('\n'),
+    },
+  }
+}
+
+/** A new Thread's title until the Title Model's lands. */
+function fallbackTitle(text: string, attachments: Doc<'attachments'>[]) {
+  const file = attachments.find((a) => kindOf(a.mediaType) !== 'image')
+  const title =
+    text ||
+    (file
+      ? `File: ${file.name}`
+      : attachments.length === 1
+        ? 'Attached image'
+        : 'Attached images')
+  return title.slice(0, TITLE_LENGTH)
+}
 
 /**
  * Inserts the Prompt and a Live answer, then starts the Answer with the
@@ -85,73 +209,113 @@ export const send = mutation({
   args: {
     threadId: v.optional(v.id('threads')),
     text: v.string(),
-    modelId: v.id('models'),
-    reasoningLevel: v.optional(v.string()),
-    webSearch: v.boolean(),
+    attachmentIds: v.optional(v.array(v.id('attachments'))),
+    ...choicesValidator.fields,
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    { threadId, text: written, attachmentIds = [], ...picked },
+  ) => {
     const user = await authComponent.getAuthUser(ctx)
-    const text = args.text.trim()
-    if (!text) throw new ConvexError('Write a Prompt first')
-    const model = await usableModel(ctx, args.modelId, user.role === 'admin')
-    const modelId = model._id
-    // The Model may have lost the level since the composer resolved it.
-    const reasoningLevel = reasoningLevelFor(
-      model.reasoningLevels,
-      args.reasoningLevel,
-    )
-    const { webSearch } = args
-    const now = Date.now()
+    const choices = await usableChoices(ctx, user.role === 'admin', picked)
+    const attachments = await sendable(ctx, {
+      userId: user._id,
+      attachmentIds,
+      modelId: choices.modelId,
+    })
+    const { text, fields } = promptFields(written, attachments)
 
-    let threadId = args.threadId
     if (threadId) {
-      const thread = await ownThread(ctx, threadId, user._id)
-      if (await liveAnswerOf(ctx, thread._id))
-        throw new ConvexError('Wait for the Answer or stop it first')
-      await ctx.db.patch('threads', thread._id, { lastMessageAt: now, modelId })
+      await idleThread(ctx, threadId, user._id)
     } else {
       threadId = await ctx.db.insert('threads', {
         userId: user._id,
-        title: text.slice(0, TITLE_LENGTH),
+        title: fallbackTitle(text, attachments),
         titlePending: true,
         pinned: false,
-        lastMessageAt: now,
-        modelId,
+        lastMessageAt: Date.now(),
+        modelId: choices.modelId,
       })
       await ctx.scheduler.runAfter(0, internal.titles.generate, {
         threadId,
-        prompt: text,
+        prompt: fields.searchText,
       })
     }
 
-    await ctx.db.insert('messages', {
+    const promptId = await ctx.db.insert('messages', {
       threadId,
       userId: user._id,
       role: 'user',
-      parts: [{ type: 'text', text }],
-      searchText: text,
+      ...fields,
     })
-    const liveAnswerId = await ctx.db.insert('liveAnswers', {
-      threadId,
-      userId: user._id,
-      modelId,
-      reasoningLevel,
-      webSearch,
-      parts: [],
-      stopRequested: false,
-      lastWriteAt: now,
-    })
-    await ctx.scheduler.runAfter(0, internal.answer.run, { liveAnswerId })
-    await ctx.scheduler.runAfter(STALE_MS, internal.liveAnswers.expire, {
-      liveAnswerId,
-    })
-    await updateSettings(ctx, user._id, {
-      lastModelId: modelId,
-      lastWebSearch: webSearch,
-      // A Model without levels leaves the remembered one for the next Model.
-      ...(reasoningLevel && { lastReasoningLevel: reasoningLevel }),
-    })
+    await link(ctx, promptId, attachments)
+    await startAnswer(ctx, threadId, user._id, choices)
+    await remember(ctx, threadId, user._id, choices)
     return threadId
+  },
+})
+
+/**
+ * Deletes the Answer and everything after it, then answers its Prompt again
+ * with the Answer's choices, or with another Model. Returns how many
+ * Messages went.
+ */
+export const regenerate = mutation({
+  args: { answerId: v.id('messages'), modelId: v.optional(v.id('models')) },
+  returns: v.number(),
+  handler: async (ctx, { answerId, modelId }) => {
+    const user = await authComponent.getAuthUser(ctx)
+    const answer = await ctx.db.get('messages', answerId)
+    if (answer?.role !== 'assistant') throw new ConvexError('Answer not found')
+    await idleThread(ctx, answer.threadId, user._id)
+    const choices = await usableChoices(ctx, user.role === 'admin', {
+      modelId: modelId ?? answer.modelId,
+      reasoningLevel: answer.reasoningLevel,
+      webSearch: answer.webSearch,
+    })
+
+    const removed = await truncate(ctx, answer, { keep: false })
+    await startAnswer(ctx, answer.threadId, user._id, choices)
+    return removed
+  },
+})
+
+/**
+ * Rewrites the Prompt in place, deletes everything after it, then resends it
+ * like `send`. Returns how many Messages went.
+ */
+export const edit = mutation({
+  args: {
+    promptId: v.id('messages'),
+    text: v.string(),
+    /** All the Prompt's Attachments after the edit; those left out are deleted. */
+    attachmentIds: v.array(v.id('attachments')),
+    ...choicesValidator.fields,
+  },
+  returns: v.number(),
+  handler: async (
+    ctx,
+    { promptId, text: written, attachmentIds, ...picked },
+  ) => {
+    const user = await authComponent.getAuthUser(ctx)
+    const prompt = await ctx.db.get('messages', promptId)
+    if (prompt?.role !== 'user') throw new ConvexError('Prompt not found')
+    await idleThread(ctx, prompt.threadId, user._id)
+    const choices = await usableChoices(ctx, user.role === 'admin', picked)
+    const attachments = await sendable(ctx, {
+      userId: user._id,
+      attachmentIds,
+      modelId: choices.modelId,
+      promptId,
+    })
+    const { fields } = promptFields(written, attachments)
+
+    const removed = await truncate(ctx, prompt, { keep: true })
+    await ctx.db.patch('messages', prompt._id, fields)
+    await link(ctx, prompt._id, attachments)
+    await startAnswer(ctx, prompt.threadId, user._id, choices)
+    await remember(ctx, prompt.threadId, user._id, choices)
+    return removed
   },
 })
 

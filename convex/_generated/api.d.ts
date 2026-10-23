@@ -9,10 +9,13 @@
  */
 
 import type * as answer from "../answer.js";
+import type * as attachments from "../attachments.js";
 import type * as auth from "../auth.js";
 import type * as cascade from "../cascade.js";
+import type * as context from "../context.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
+import type * as intake from "../intake.js";
 import type * as listing from "../listing.js";
 import type * as liveAnswers from "../liveAnswers.js";
 import type * as llm from "../llm.js";
@@ -36,10 +39,13 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   answer: typeof answer;
+  attachments: typeof attachments;
   auth: typeof auth;
   cascade: typeof cascade;
+  context: typeof context;
   crons: typeof crons;
   http: typeof http;
+  intake: typeof intake;
   listing: typeof listing;
   liveAnswers: typeof liveAnswers;
   llm: typeof llm;

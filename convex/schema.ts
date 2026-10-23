@@ -106,6 +106,8 @@ export default defineSchema({
         error: v.optional(v.string()),
         usage: v.optional(usageValidator),
         timing: v.optional(timingValidator),
+        // The oldest Message in its Context, set only when older ones were left out.
+        contextStartMessageId: v.optional(v.id('messages')),
       }),
     ),
   )
@@ -140,5 +142,6 @@ export default defineSchema({
     size: v.number(),
   })
     .index('by_message', ['messageId'])
-    .index('by_user', ['userId']),
+    .index('by_user', ['userId'])
+    .index('by_storage', ['storageId']),
 })

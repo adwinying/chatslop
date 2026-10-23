@@ -245,3 +245,158 @@ describe('liveAnswers.expire', () => {
     expect(answer).not.toHaveProperty('error')
   })
 })
+
+/** Finishes the Thread's Live answer, by default as complete. */
+async function finishLive(
+  t: Test,
+  threadId: Id<'threads'>,
+  outcome: { error?: string } = {},
+) {
+  const live = await liveAnswerOf(t, threadId)
+  await t.mutation(internal.liveAnswers.finish, {
+    liveAnswerId: live!._id,
+    parts: answerParts,
+    ...outcome,
+  })
+}
+
+/** Prompt, Answer, Prompt, Answer. */
+async function twoExchanges() {
+  const sent = await sendFirstPrompt()
+  const { t, as, threadId, modelId } = sent
+  await finishLive(t, threadId)
+  await as.mutation(api.threads.send, {
+    threadId,
+    text: 'Second',
+    modelId,
+    webSearch: false,
+  })
+  await finishLive(t, threadId)
+  return { ...sent, messages: await messagesOf(t, threadId) }
+}
+
+describe('threads.regenerate', () => {
+  test('deletes everything after the Prompt and answers it again with the same choices', async () => {
+    const { t, as, threadId, modelId, messages } = await twoExchanges()
+
+    const removed = await as.mutation(api.threads.regenerate, {
+      answerId: messages[1]!._id,
+    })
+
+    expect(removed).toBe(3)
+    expect(await messagesOf(t, threadId)).toMatchObject([
+      { _id: messages[0]!._id },
+    ])
+    expect(await liveAnswerOf(t, threadId)).toMatchObject({
+      modelId,
+      reasoningLevel: 'medium',
+      webSearch: true,
+    })
+  })
+
+  test('with another Model re-resolves the Reasoning level for it', async () => {
+    const { t, as, threadId, messages } = await twoExchanges()
+    const haiku = await modelOf(t, 'claude-haiku-5-5')
+
+    const removed = await as.mutation(api.threads.regenerate, {
+      answerId: messages[3]!._id,
+      modelId: haiku._id,
+    })
+
+    expect(removed).toBe(1)
+    expect(await messagesOf(t, threadId)).toHaveLength(3)
+    expect(await liveAnswerOf(t, threadId)).toMatchObject({
+      modelId: haiku._id,
+      // It has no `medium`, so its lowest level.
+      reasoningLevel: 'off',
+      webSearch: false,
+    })
+  })
+
+  test('is refused while the Thread has a Live answer', async () => {
+    const { t, as, threadId, modelId, messages } = await twoExchanges()
+    await as.mutation(api.threads.send, {
+      threadId,
+      text: 'Third',
+      modelId,
+      webSearch: false,
+    })
+
+    await expect(
+      as.mutation(api.threads.regenerate, { answerId: messages[1]!._id }),
+    ).rejects.toThrow('Wait for the Answer or stop it first')
+    expect(await messagesOf(t, threadId)).toHaveLength(5)
+  })
+})
+
+describe('threads.edit', () => {
+  test('patches the Prompt, deletes what follows with its Attachments, and resends with the picked choices', async () => {
+    const { t, as, userId, threadId, messages } = await twoExchanges()
+    const [first, , second] = messages
+    const storageId = await t.run(async (ctx) => {
+      const id = await ctx.storage.store(new Blob(['notes']))
+      await ctx.db.insert('attachments', {
+        userId,
+        messageId: second!._id,
+        storageId: id,
+        name: 'notes.txt',
+        mediaType: 'text/plain',
+        size: 5,
+      })
+      return id
+    })
+    const luna = await modelOf(t, 'gpt-6-luna')
+
+    const removed = await as.mutation(api.threads.edit, {
+      promptId: first!._id,
+      text: ' Hello again ',
+      attachmentIds: [],
+      modelId: luna._id,
+      reasoningLevel: 'high',
+      webSearch: false,
+    })
+
+    expect(removed).toBe(3)
+    expect(await messagesOf(t, threadId)).toMatchObject([
+      {
+        _id: first!._id,
+        parts: [{ type: 'text', text: 'Hello again' }],
+        searchText: 'Hello again',
+      },
+    ])
+    expect(
+      await t.run(async (ctx) => ({
+        attachments: await ctx.db.query('attachments').take(1),
+        blob: await ctx.storage.get(storageId),
+      })),
+    ).toEqual({ attachments: [], blob: null })
+    expect(await liveAnswerOf(t, threadId)).toMatchObject({
+      modelId: luna._id,
+      reasoningLevel: 'high',
+      webSearch: false,
+    })
+    expect(await t.run((ctx) => ctx.db.get('threads', threadId))).toMatchObject(
+      { modelId: luna._id },
+    )
+  })
+
+  test('refuses an empty Prompt and an Answer', async () => {
+    const { as, modelId, messages } = await twoExchanges()
+    const choices = { attachmentIds: [], modelId, webSearch: false }
+
+    await expect(
+      as.mutation(api.threads.edit, {
+        promptId: messages[0]!._id,
+        text: '  ',
+        ...choices,
+      }),
+    ).rejects.toThrow('Write a Prompt first')
+    await expect(
+      as.mutation(api.threads.edit, {
+        promptId: messages[1]!._id,
+        text: 'Hi',
+        ...choices,
+      }),
+    ).rejects.toThrow('Prompt not found')
+  })
+})

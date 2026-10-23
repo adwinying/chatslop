@@ -1,6 +1,6 @@
 import type { Id } from '@/convex/_generated/dataModel'
 import type { FunctionReturnType } from 'convex/server'
-import type { KeyboardEvent } from 'react'
+import type { KeyboardEvent, ReactElement } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { useMutation } from 'convex/react'
 import { ChevronDownIcon, SearchIcon, StarIcon } from 'lucide-react'
@@ -21,25 +21,50 @@ export function ModelPicker({
   model: Model
   onPick: (modelId: Id<'models'>) => void
 }) {
+  return (
+    <ModelMenu
+      options={options}
+      modelId={model._id}
+      onPick={onPick}
+      trigger={
+        <button
+          type="button"
+          aria-label={`Model: ${model.name}`}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm outline-none hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-ring/30"
+        >
+          <ProviderIcon options={options} providerId={model.providerId} />
+          {model.name}
+          <ChevronDownIcon className="size-3.5 text-zinc-500" />
+        </button>
+      }
+    />
+  )
+}
+
+/** The Model popover, opened by `trigger`. */
+export function ModelMenu({
+  options,
+  modelId,
+  onPick,
+  trigger,
+}: {
+  options: Options
+  modelId: Id<'models'>
+  onPick: (modelId: Id<'models'>) => void
+  trigger: ReactElement
+}) {
   const [open, setOpen] = useState(false)
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger
-        aria-label={`Model: ${model.name}`}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm outline-none hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-ring/30"
-      >
-        <ProviderIcon options={options} providerId={model.providerId} />
-        {model.name}
-        <ChevronDownIcon className="size-3.5 text-zinc-500" />
-      </Popover.Trigger>
+      <Popover.Trigger render={trigger} />
       <Popover.Portal>
         <Popover.Positioner side="top" align="start" sideOffset={8}>
           <PickerPopup
             options={options}
-            modelId={model._id}
-            onPick={(modelId) => {
-              onPick(modelId)
+            modelId={modelId}
+            onPick={(picked) => {
+              onPick(picked)
               setOpen(false)
             }}
           />

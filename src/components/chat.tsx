@@ -1,27 +1,55 @@
 import type { Id } from '@/convex/_generated/dataModel'
+import type { AttachmentKind } from '@/convex/intake'
 import type { Part } from '@/convex/parts'
 import type { FunctionReturnType } from 'convex/server'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { useEffect, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
 import { Answer } from '~/components/answer'
 import { SidebarButton } from '~/components/app-sidebar'
+import {
+  hasFiles,
+  type Intake,
+  PromptAttachments,
+  useIntake,
+} from '~/components/attachments'
 import {
   Composer,
   MESSAGE_ID,
   ReasoningSelect,
   WebSearchToggle,
 } from '~/components/composer'
+import {
+  AnswerActions,
+  PromptActions,
+  PromptEditor,
+} from '~/components/message-actions'
 import { ModelPicker } from '~/components/model-picker'
 import {
+  attempt,
   DeleteButton,
   PinButton,
   TitleInput,
 } from '~/components/thread-actions'
-import { draftKey, useDraft } from '~/lib/draft'
+import {
+  type DraftAttachment,
+  draftKey,
+  useDraft,
+  useDraftAttachments,
+  useDraftUploads,
+} from '~/lib/draft'
 import { cn } from '~/lib/utils'
+
+/** Runs a regenerate or edit, then toasts how many Messages it removed. True once it succeeds. */
+async function truncate(run: () => Promise<number>) {
+  const removed = await attempt(run)
+  if (removed)
+    toast(`${removed} ${removed === 1 ? 'Message' : 'Messages'} removed`)
+  return removed !== undefined
+}
 
 /** The Thread view, or a new Thread without a `threadId`. */
 export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
@@ -37,6 +65,17 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   const draft = me ? draftKey(me.id, threadId) : undefined
   const thread = useQuery(api.threads.get, args)
   const deleted = !!threadId && thread === null && !!me
+  const regenerate = useMutation(api.threads.regenerate)
+  const edit = useMutation(api.threads.edit)
+  const lastAnswer = messages?.findLast((m) => m.role === 'assistant')
+  const lastAnswerId = lastAnswer?._id
+  const draftIntake = useIntake(
+    useDraftAttachments(draft),
+    useDraftUploads(draft),
+    model?.attachmentTypes,
+  )
+  // Until the Draft is known, an upload would have nowhere to go.
+  const intake = draft ? draftIntake : undefined
 
   // Another tab deleted it.
   useEffect(() => {
@@ -44,7 +83,7 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
   }, [deleted, navigate])
 
   return (
-    <main className="relative flex min-w-0 flex-1 flex-col">
+    <DropZone intake={intake}>
       <ThreadHeader thread={thread} />
       {/* Reversed, so the view stays pinned to the newest text as it streams. */}
       <div className="flex flex-1 flex-col-reverse overflow-y-auto px-4 pb-40">
@@ -52,19 +91,61 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
           {!threadId && me && (
             <Greeting name={me.name} draft={draftKey(me.id)} />
           )}
-          {messages?.map((message) =>
-            message.role === 'user' ? (
-              <Prompt key={message._id} parts={message.parts} />
-            ) : (
-              <Answer
-                key={message._id}
-                parts={message.parts}
-                status={message.status}
-                error={message.error}
-                made={message}
-              />
-            ),
-          )}
+          {messages?.map((message) => (
+            <Fragment key={message._id}>
+              {message._id === lastAnswer?.contextStartMessageId && (
+                <p className="flex items-center gap-3 text-xs text-zinc-500 before:h-px before:flex-1 before:bg-zinc-800 after:h-px after:flex-1 after:bg-zinc-800">
+                  Earlier messages weren't sent to the Model
+                </p>
+              )}
+              {message.role === 'user' ? (
+                <Prompt
+                  text={textOf(message.parts)}
+                  attachments={message.attachments}
+                  readable={model?.attachmentTypes}
+                  busy={!!live}
+                  canSend={!!model}
+                  onSend={async (text, attachmentIds) =>
+                    !!model &&
+                    (await truncate(() =>
+                      edit({
+                        promptId: message._id,
+                        text,
+                        attachmentIds,
+                        modelId: model._id,
+                        reasoningLevel: choices.reasoningLevel,
+                        webSearch: choices.webSearch,
+                      }),
+                    ))
+                  }
+                />
+              ) : (
+                <Answer
+                  parts={message.parts}
+                  status={message.status}
+                  error={message.error}
+                  made={message}
+                  actions={
+                    <AnswerActions
+                      text={textOf(message.parts)}
+                      modelId={message.modelId}
+                      options={options}
+                      always={
+                        message._id === lastAnswerId ||
+                        message.status === 'error'
+                      }
+                      disabled={!!live}
+                      onRegenerate={(modelId) =>
+                        void truncate(() =>
+                          regenerate({ answerId: message._id, modelId }),
+                        )
+                      }
+                    />
+                  }
+                />
+              )}
+            </Fragment>
+          ))}
           {live && <Answer parts={live.parts} streaming />}
         </div>
       </div>
@@ -104,15 +185,21 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
               </>
             )
           }
+          intake={intake}
           onSend={async (text) => {
             if (!model) return
+            const attachmentIds = draftIntake.attachments.map((a) => a._id)
             const id = await send({
               threadId,
               text,
+              attachmentIds,
               modelId: model._id,
               reasoningLevel: choices.reasoningLevel,
               webSearch: choices.webSearch,
             })
+            draftIntake.setAttachments((list) =>
+              list.filter((a) => !attachmentIds.includes(a._id)),
+            )
             if (!threadId)
               await navigate({
                 to: '/chat/$threadId',
@@ -122,6 +209,47 @@ export function Chat({ threadId }: { threadId?: Id<'threads'> }) {
           onStop={() => threadId && void stop({ threadId })}
         />
       </div>
+    </DropZone>
+  )
+}
+
+/** The Thread view, which attaches files dropped anywhere on it. */
+function DropZone({
+  intake,
+  children,
+}: {
+  intake?: Intake
+  children: ReactNode
+}) {
+  const [dragging, setDragging] = useState(false)
+
+  return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- dropping is a pointer shortcut; Attach and paste serve keyboards.
+    <main
+      className="relative flex min-w-0 flex-1 flex-col"
+      onDragOver={(event) => {
+        if (!intake || !hasFiles(event)) return
+        event.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={(event) => {
+        if (
+          !(event.relatedTarget instanceof Node) ||
+          !event.currentTarget.contains(event.relatedTarget)
+        )
+          setDragging(false)
+      }}
+      onDrop={(event) => {
+        setDragging(false)
+        intake?.drop(event)
+      }}
+    >
+      {children}
+      {dragging && (
+        <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-sky-500/60 bg-zinc-950/80 text-sm text-zinc-200">
+          Drop files to attach
+        </div>
+      )}
     </main>
   )
 }
@@ -230,12 +358,58 @@ function Greeting({ name, draft }: { name: string; draft: string }) {
   )
 }
 
-function Prompt({ parts }: { parts: Part[] }) {
+const textOf = (parts: Part[]) =>
+  parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('')
+
+/** A Prompt bubble under its Attachments, with Edit and Copy, which becomes an editor in place. */
+function Prompt({
+  text,
+  attachments,
+  readable,
+  busy,
+  canSend,
+  onSend,
+}: {
+  text: string
+  attachments: DraftAttachment[]
+  readable?: AttachmentKind[]
+  /** While the Thread has a Live answer. */
+  busy: boolean
+  canSend: boolean
+  /** Resolves true once the edit succeeds. */
+  onSend: (text: string, attachmentIds: Id<'attachments'>[]) => Promise<boolean>
+}) {
+  const [editing, setEditing] = useState(false)
+
   return (
-    <article aria-label="Prompt" className="flex justify-end">
-      <div className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap">
-        {parts.map((part) => (part.type === 'text' ? part.text : '')).join('')}
-      </div>
+    <article aria-label="Prompt" className="group flex flex-col items-end">
+      {editing ? (
+        <PromptEditor
+          text={text}
+          attachments={attachments}
+          readable={readable}
+          disabled={busy || !canSend}
+          // Stays open on refusal, keeping the edited text and Attachments.
+          onSend={async (edited, attachmentIds) => {
+            if (await onSend(edited, attachmentIds)) setEditing(false)
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <>
+          <PromptAttachments attachments={attachments} />
+          {text && (
+            <div className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap">
+              {text}
+            </div>
+          )}
+          <PromptActions
+            text={text}
+            disabled={busy}
+            onEdit={() => setEditing(true)}
+          />
+        </>
+      )}
     </article>
   )
 }

@@ -4,7 +4,7 @@
 // /convex/* source modules (convex/_generated/api.js and friends).
 import { createWebSocketProxy } from 'crossws'
 import { defineHandler, defineWebSocketHandler, HTTPError } from 'nitro'
-import { proxy } from 'nitro/h3'
+import { proxyRequest } from 'nitro/h3'
 import { CONVEX_ORIGIN } from '~/lib/convex-origin'
 
 const SYNC = /^\/api\/\d+\.\d+\.\d+\/sync$/
@@ -36,6 +36,6 @@ export default defineWebSocketHandler(
     if (!STORAGE.test(stripPrefix(event.url))) {
       throw new HTTPError('Not found', { status: 404 })
     }
-    return proxy(event, CONVEX_ORIGIN + upstreamPath(event.url))
+    return proxyRequest(event, CONVEX_ORIGIN + upstreamPath(event.url))
   }),
 )

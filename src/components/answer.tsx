@@ -5,6 +5,7 @@ import type {
   usageValidator,
 } from '@/convex/schema'
 import type { Infer } from 'convex/values'
+import type { ReactNode } from 'react'
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
 import { math } from '@streamdown/math'
@@ -38,12 +39,15 @@ export function Answer({
   status,
   error,
   made,
+  actions,
 }: {
   parts: Part[]
   streaming?: boolean
   status?: Infer<typeof answerStatus>
   error?: string
   made?: Made
+  /** Shown before the label. The article is a `group`, so they can show on hover. */
+  actions?: ReactNode
 }) {
   const reasoning = parts
     .flatMap((part) => (part.type === 'reasoning' ? [part.text] : []))
@@ -66,7 +70,7 @@ export function Answer({
   ]
 
   return (
-    <article aria-label="Answer" aria-busy={streaming}>
+    <article aria-label="Answer" aria-busy={streaming} className="group">
       {streaming && !reasoning && !text && (
         <Loader2Icon
           aria-label="Waiting for the Model"
@@ -117,7 +121,12 @@ export function Answer({
           {error}
         </div>
       )}
-      {made && <Label {...made} />}
+      {(actions || made) && (
+        <div className="mt-2 flex items-center gap-1">
+          {actions}
+          {made && <Label {...made} />}
+        </div>
+      )}
     </article>
   )
 }
@@ -147,7 +156,7 @@ function Label({ modelName, reasoningLevel, webSearch, usage, timing }: Made) {
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="group/label relative mt-2 inline-flex">
+    <div className="group/label relative inline-flex">
       <button
         type="button"
         aria-label={[modelName, reasoningLevel, webSearch && 'Web search']

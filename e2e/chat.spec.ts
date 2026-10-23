@@ -146,3 +146,140 @@ test('the phone sidebar closes with Escape and returns focus', async ({
   await expect(threads).toBeHidden()
   await expect(menu).toBeFocused()
 })
+
+/** Sends the Prompt and stops its Answer. */
+async function sendAndStop(page: Page, text: string) {
+  await page.getByLabel('Message').fill(text)
+  await page.getByLabel('Message').press('Enter')
+  await expect(page).toHaveURL(/\/chat\/\w+$/)
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await expect(page.getByRole('button', { name: 'Send' })).toBeVisible()
+}
+
+test('an Answer regenerates with another Model', async ({ page }) => {
+  await logIn(page)
+  // The dev database remembers earlier runs, so pick something else each time.
+  const model = (
+    await page.getByRole('button', { name: /^Model: / }).textContent()
+  )?.includes('Haiku')
+    ? 'Sonnet'
+    : 'Haiku'
+  await sendAndStop(page, 'Regenerate me')
+  const answer = page.getByRole('article', { name: 'Answer' })
+
+  await answer
+    .getByRole('button', { name: 'Regenerate with another Model' })
+    .click()
+  await page.keyboard.type(model.toLowerCase())
+  await page.keyboard.press('Enter')
+
+  await expect(page.getByText('1 Message removed')).toBeVisible()
+  await expect(answer).toHaveAttribute('aria-busy', 'true')
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await expect(answer).toContainText(new RegExp(`${model} [\\d.]+`))
+  await expect(page.getByRole('article', { name: 'Prompt' })).toHaveText([
+    'Regenerate me',
+  ])
+})
+
+test('editing a Prompt mid-Thread resends it and drops what followed', async ({
+  page,
+}) => {
+  await logIn(page)
+  await sendAndStop(page, 'First')
+  await sendAndStop(page, 'Second')
+  const first = page.getByRole('article', { name: 'Prompt' }).first()
+
+  await first.hover()
+  await first.getByRole('button', { name: 'Edit' }).click()
+  await first.getByLabel('Edit Prompt').fill('First, edited')
+  await first.getByLabel('Edit Prompt').press('Enter')
+
+  await expect(page.getByText('3 Messages removed')).toBeVisible()
+  await expect(page.getByRole('article', { name: 'Prompt' })).toHaveText([
+    'First, edited',
+  ])
+  const answer = page.getByRole('article', { name: 'Answer' })
+  await expect(answer).toHaveAttribute('aria-busy', 'true')
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await expect(answer.getByText('Stopped')).toBeVisible()
+})
+
+test('a pasted image is sent, shows as a thumbnail, and only its owner can read it', async ({
+  page,
+  playwright,
+}) => {
+  await logIn(page)
+  const message = page.getByLabel('Message')
+  // The composer is hydrated once the Model options load.
+  await expect(page.getByRole('button', { name: /^Model: / })).toBeVisible()
+
+  // Pastes a 64×48 PNG, as copying an image would.
+  await message.evaluate(async (textarea) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 48
+    canvas.getContext('2d')!.fillRect(0, 0, 64, 48)
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/png'),
+    )
+    const data = new DataTransfer()
+    data.items.add(new File([blob!], 'square.png', { type: 'image/png' }))
+    textarea.dispatchEvent(
+      new ClipboardEvent('paste', {
+        clipboardData: data,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+  })
+  // Re-encoded to WebP in the browser.
+  await expect(
+    page.getByRole('button', { name: 'Remove square.webp' }),
+  ).toBeVisible()
+  await message.fill('What is this?')
+  await message.press('Enter')
+  await expect(page).toHaveURL(/\/chat\/\w+$/)
+  await page.getByRole('button', { name: 'Stop' }).click()
+
+  const prompt = page.getByRole('article', { name: 'Prompt' })
+  const thumbnail = prompt.getByRole('img', { name: 'square.webp' })
+  await expect(thumbnail).toBeVisible()
+  await expect
+    .poll(() => thumbnail.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBe(64)
+  await prompt.getByRole('button', { name: 'Open square.webp' }).click()
+  await expect(page.getByRole('dialog', { name: 'square.webp' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  const url = (await thumbnail.getAttribute('src'))!
+  expect(url).toMatch(/^\/api\/attachments\/\w+$/)
+  const own = await page.request.get(url)
+  expect(own.status()).toBe(200)
+  expect(own.headers()['content-type']).toBe('image/webp')
+
+  // Another User, created by the Admin; earlier runs may have made them already.
+  const other = { username: 'e2e_other', password: 'e2e-other-password' }
+  const origin = { Origin: 'http://localhost:3000' }
+  await page.request.post('/api/auth/admin/create-user', {
+    headers: origin,
+    data: {
+      email: 'e2e-other@chatslop.invalid',
+      password: other.password,
+      name: other.username,
+      role: 'user',
+      data: { username: other.username },
+    },
+  })
+  const context = await playwright.request.newContext({
+    baseURL: 'http://localhost:3000',
+  })
+  expect((await context.get(url)).status()).toBe(401)
+  const signIn = await context.post('/api/auth/sign-in/username', {
+    headers: origin,
+    data: other,
+  })
+  expect(signIn.ok()).toBe(true)
+  expect((await context.get(url)).status()).toBe(404)
+  await context.dispose()
+})

@@ -127,11 +127,19 @@ export const options = query({
         .filter((_, i) => perProvider[i]!.length > 0)
         .map(({ _id, name, apiFormat }) => ({ _id, name, apiFormat })),
       models: models.map(
-        ({ _id, providerId, name, reasoningLevels, adminOnly }) => ({
+        ({
           _id,
           providerId,
           name,
           reasoningLevels,
+          attachmentTypes,
+          adminOnly,
+        }) => ({
+          _id,
+          providerId,
+          name,
+          reasoningLevels,
+          attachmentTypes,
           adminOnly,
         }),
       ),
