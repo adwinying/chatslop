@@ -8,6 +8,7 @@ import {
   MenuIcon,
   SearchIcon,
   SettingsIcon,
+  SquarePenIcon,
   XIcon,
 } from 'lucide-react'
 import {
@@ -135,6 +136,7 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             className={cn(buttonVariants({ size: 'lg' }), 'w-full')}
             onClick={onClose}
           >
+            <SquarePenIcon data-icon="inline-start" />
             New Chat
           </Link>
         </div>
