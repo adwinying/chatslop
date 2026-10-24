@@ -48,7 +48,21 @@ test('the seeded Admin logs in, sees the shell over /convex, and logs out', asyn
     sockets.some((url) => new URL(url).pathname.startsWith('/convex/api/')),
   ).toBe(true)
 
-  await sidebar.getByRole('button', { name: 'Log out' }).click()
+  const logOut = sidebar.getByRole('button', { name: 'Log out' })
+  const dialog = page.getByRole('alertdialog', { name: 'Log out?' })
+  await logOut.click()
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(logOut).toBeFocused()
+  await expect(page).toHaveURL('/')
+
+  await logOut.click()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(page).toHaveURL('/')
+
+  await logOut.click()
+  await dialog.getByRole('button', { name: 'Log out' }).click()
   await expect(page).toHaveURL('/login')
   await page.goto('/')
   await expect(page).toHaveURL('/login')

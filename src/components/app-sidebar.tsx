@@ -1,5 +1,6 @@
 import type { Doc } from '@/convex/_generated/dataModel'
 import type { ReactNode, Ref } from 'react'
+import { AlertDialog } from '@base-ui/react/alert-dialog'
 import {
   getRouteApi,
   Link,
@@ -453,6 +454,37 @@ async function signOut() {
   location.reload()
 }
 
+function LogOutButton() {
+  return (
+    <AlertDialog.Root>
+      <AlertDialog.Trigger
+        render={<Button variant="ghost" size="icon" aria-label="Log out" />}
+      >
+        <LogOutIcon />
+      </AlertDialog.Trigger>
+      <AlertDialog.Portal>
+        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-black/60" />
+        <AlertDialog.Popup className="fixed top-1/2 left-1/2 z-50 w-[min(24rem,90vw)] -translate-1/2 rounded-xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl outline-none">
+          <AlertDialog.Title className="font-semibold">
+            Log out?
+          </AlertDialog.Title>
+          <div className="mt-5 flex justify-end gap-2">
+            <AlertDialog.Close render={<Button variant="ghost" size="lg" />}>
+              Cancel
+            </AlertDialog.Close>
+            <AlertDialog.Close
+              render={<Button size="lg" />}
+              onClick={() => void signOut()}
+            >
+              Log out
+            </AlertDialog.Close>
+          </div>
+        </AlertDialog.Popup>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
+  )
+}
+
 function UserFooter() {
   const me = orPreloaded(useQuery(api.users.me), appRoute.useLoaderData()?.me)
 
@@ -477,14 +509,7 @@ function UserFooter() {
             <SettingsIcon />
           </Link>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Log out"
-          onClick={signOut}
-        >
-          <LogOutIcon />
-        </Button>
+        <LogOutButton />
       </div>
     </div>
   )
