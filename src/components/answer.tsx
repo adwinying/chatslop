@@ -36,13 +36,14 @@ function InlineCode({
   ...props
 }: ComponentProps<typeof defaultComponents.code>) {
   const first = Children.toArray(children).find(
-    isValidElement<{ style?: CSSProperties }>,
+    isValidElement<{ 'data-sd-animate'?: boolean; style?: CSSProperties }>,
   )
+  const fade = first?.props['data-sd-animate']
   return (
     <defaultComponents.code
       {...props}
-      data-sd-animate={first && true}
-      style={first?.props.style}
+      data-sd-animate={fade}
+      style={fade ? first?.props.style : undefined}
     >
       {children}
     </defaultComponents.code>
@@ -81,6 +82,8 @@ export function Answer({
   const text = parts
     .flatMap((part) => (part.type === 'text' ? [part.text] : []))
     .join('\n\n')
+  // Text shown at mount, e.g. after a reload, would all fade in again.
+  const [fades] = useState(!text)
   // The Model can think again after some text, e.g. around a Web search.
   const thinking =
     streaming &&
@@ -108,7 +111,7 @@ export function Answer({
         <Streamdown
           plugins={plugins}
           isAnimating={streaming}
-          animated={animated}
+          animated={fades ? animated : undefined}
           components={components}
           className="font-serif text-[17px] leading-normal"
         >
