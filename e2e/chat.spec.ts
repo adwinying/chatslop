@@ -72,10 +72,11 @@ test('a Model picked by keyboard persists after sending and reloading', async ({
 
   await expect(picker).toHaveAccessibleName(new RegExp(model))
   await expect(reasoning).toHaveValue(level)
+  // Streamed text means the page is live; Stop pressed before that does nothing.
+  const answer = page.getByRole('article', { name: 'Answer' })
+  await expect(answer).toContainText('Mock Answer:')
   await page.getByRole('button', { name: 'Stop' }).click()
-  await expect(page.getByRole('article', { name: 'Answer' })).toContainText(
-    new RegExp(`${model} [\\d.]+ · ${level}`),
-  )
+  await expect(answer).toContainText(new RegExp(`${model} [\\d.]+ · ${level}`))
 })
 
 test('a new Thread gets its title, then is renamed, pinned and deleted', async ({
