@@ -6,6 +6,7 @@ import { useMutation } from 'convex/react'
 import { ChevronDownIcon, SearchIcon, StarIcon } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { api } from '@/convex/_generated/api'
+import { useShortcut } from '~/lib/shortcut'
 import { cn } from '~/lib/utils'
 
 export type Options = NonNullable<FunctionReturnType<typeof api.models.options>>
@@ -21,6 +22,9 @@ export function ModelPicker({
   model: Model
   onPick: (modelId: Id<'models'>) => void
 }) {
+  const button = useRef<HTMLButtonElement>(null)
+  useShortcut('m', () => button.current?.click(), { shift: true })
+
   return (
     <ModelMenu
       options={options}
@@ -28,6 +32,7 @@ export function ModelPicker({
       onPick={onPick}
       trigger={
         <button
+          ref={button}
           type="button"
           aria-label={`Model: ${model.name}`}
           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm outline-none hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-ring/30"

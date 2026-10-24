@@ -1,7 +1,7 @@
 import type { KeyboardEvent, ReactNode } from 'react'
 import { ConvexError } from 'convex/values'
 import { ArrowUpIcon, BrainIcon, GlobeIcon, SquareIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   AttachButton,
   DraftAttachments,
@@ -9,6 +9,7 @@ import {
 } from '~/components/attachments'
 import { Button } from '~/components/ui/button'
 import { useDraft } from '~/lib/draft'
+import { useShortcut } from '~/lib/shortcut'
 import { cn } from '~/lib/utils'
 
 /** The text area's ID, so a suggested prompt can focus it. */
@@ -150,10 +151,25 @@ export function ReasoningSelect({
   value: string
   onChange: (level: string) => void
 }) {
+  const select = useRef<HTMLSelectElement>(null)
+  useShortcut(
+    'e',
+    () => {
+      select.current?.focus()
+      try {
+        select.current?.showPicker()
+      } catch {
+        // Unsupported in this browser: focus alone lets arrow keys pick.
+      }
+    },
+    { shift: true },
+  )
+
   return (
     <label className={pill}>
       <BrainIcon className="size-3.5" />
       <select
+        ref={select}
         aria-label="Reasoning level"
         value={value}
         onChange={(event) => onChange(event.target.value)}

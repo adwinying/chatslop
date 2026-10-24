@@ -1,6 +1,11 @@
 import type { Doc } from '@/convex/_generated/dataModel'
-import type { ReactNode } from 'react'
-import { getRouteApi, Link, useLocation } from '@tanstack/react-router'
+import type { ReactNode, Ref } from 'react'
+import {
+  getRouteApi,
+  Link,
+  useLocation,
+  useNavigate,
+} from '@tanstack/react-router'
 import { usePaginatedQuery, useQuery } from 'convex/react'
 import {
   Loader2Icon,
@@ -31,6 +36,7 @@ import {
 import { Button, buttonVariants } from '~/components/ui/button'
 import { authClient } from '~/lib/auth-client'
 import { orPreloaded } from '~/lib/preload'
+import { useShortcut } from '~/lib/shortcut'
 import { cn } from '~/lib/utils'
 
 const PAGE_SIZE = 50
@@ -86,6 +92,10 @@ export function SidebarButton() {
 /** Persistent from `md` up; an overlay on phones while `open`. */
 function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const closeButton = useRef<HTMLButtonElement>(null)
+  const search = useRef<HTMLInputElement>(null)
+  const searchOnOpen = useRef(false)
+  const openSidebar = use(OpenSidebar)
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const debounced = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS)
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
@@ -93,13 +103,28 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   })
 
   useEffect(() => {
-    if (open) closeButton.current?.focus()
+    if (open) (searchOnOpen.current ? search : closeButton).current?.focus()
+    searchOnOpen.current = false
   }, [open])
 
   useEffect(() => {
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  useShortcut('k', () => {
+    const opener = document.activeElement
+    search.current?.focus()
+    // Hidden on phones until the sidebar opens, so focus didn't take.
+    if (
+      document.activeElement !== search.current &&
+      opener instanceof HTMLElement
+    ) {
+      searchOnOpen.current = true
+      openSidebar(opener)
+    }
+  })
+  useShortcut('o', () => void navigate({ to: '/' }), { shift: true })
 
   return (
     <>
@@ -140,7 +165,7 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             New Chat
           </Link>
         </div>
-        <SearchBox query={query} onChange={setQuery} />
+        <SearchBox ref={search} query={query} onChange={setQuery} />
         {/* Hidden, not unmounted, while searching, so it keeps its loaded
             pages and live results instead of falling back to the preload. */}
         <ThreadList hidden={!!query.trim()} />
@@ -208,9 +233,11 @@ function ThreadList({ hidden }: { hidden: boolean }) {
 }
 
 function SearchBox({
+  ref,
   query,
   onChange,
 }: {
+  ref: Ref<HTMLInputElement>
   query: string
   onChange: (query: string) => void
 }) {
@@ -218,6 +245,7 @@ function SearchBox({
     <div className="mx-3 mt-3 flex items-center gap-2 border-b border-sidebar-border pb-2 text-zinc-500">
       <SearchIcon aria-hidden className="size-3.5 shrink-0" />
       <input
+        ref={ref}
         type="search"
         aria-label="Search Threads"
         placeholder="Search your Threads…"
