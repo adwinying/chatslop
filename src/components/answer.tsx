@@ -71,10 +71,19 @@ export const textOf = (
   parts: Part[],
   textFor = (part: TextPart) => part.text,
 ) =>
-  parts
-    .map((part) => (part.type === 'text' ? textFor(part) : '\n\n'))
-    .join('')
-    .trim()
+  parts.reduce(
+    (text, part, i) =>
+      part.type === 'text'
+        ? text +
+          (text && parts[i - 1]?.type !== 'text' ? '\n\n' : '') +
+          textFor(part)
+        : text,
+    '',
+  )
+
+// Markdown a <cite> can't wrap: block syntax at the start, a line break, a table cell.
+const BLOCK = /^(?:#{1,6}\s|[-*+]\s|>|\d+[.)]\s|`{3}|~{3})|[\n|]/
+const INDENTED = /(?: {4}|\t)$/
 
 const cite = (numbers: number[], phrase = '') =>
   `<cite data-sources="${[...new Set(numbers)].join(' ')}">${phrase}</cite>`
@@ -98,33 +107,35 @@ function citedText(parts: Part[]) {
     // Stored parts came from the SDK; the validator only loosened their JSON.
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     const all = citations as Citation[]
-    // Offsets that miss the link, e.g. counted in code points, leave it as is.
-    const ranged = all
-      .filter(
-        ({ source, startIndex = 0, endIndex = 0 }) =>
-          source.sourceType === 'url' &&
-          text.slice(startIndex, endIndex).includes(source.url),
-      )
-      .toSorted((a, b) => (a.startIndex ?? 0) - (b.startIndex ?? 0))
-    if (ranged.length) {
+    if (all.some(({ startIndex }) => startIndex !== undefined)) {
       let marked = ''
       let at = 0
-      for (const citation of ranged) {
-        if ((citation.startIndex ?? 0) < at) continue
-        marked += text.slice(at, citation.startIndex).trimEnd()
+      for (const citation of all.toSorted(
+        (a, b) => (a.startIndex ?? 0) - (b.startIndex ?? 0),
+      )) {
+        const { source, startIndex = 0, endIndex = 0 } = citation
+        const link = text.slice(startIndex, endIndex)
+        // Offsets that miss the link, e.g. counted in code points, leave it as is.
+        if (
+          startIndex < at ||
+          source.sourceType !== 'url' ||
+          !link.startsWith('([') ||
+          !link.endsWith(`](${source.url}))`)
+        )
+          continue
+        marked += text.slice(at, startIndex).trimEnd()
         marked += cite(numbers([citation]))
-        at = citation.endIndex ?? 0
+        at = endIndex
       }
       return marked + text.slice(at)
     }
 
+    const [, lead = '', phrase = '', trail = ''] =
+      /^(\s*)(.*?)(\s*)$/s.exec(text) ?? []
+    // Its Source stays in the Sources row, unnumbered.
+    if (!phrase || BLOCK.test(phrase) || INDENTED.test(lead)) return text
     const sources = numbers(all)
-    if (!sources.length) return text
-    const [, lead, phrase, trail] = /^(\s*)(.*?)(\s*)$/s.exec(text) ?? []
-    // Tags spanning lines would break the Markdown blocks inside.
-    return phrase?.includes('\n') || !phrase
-      ? text + cite(sources)
-      : `${lead}${cite(sources, phrase)}${trail}`
+    return sources.length ? `${lead}${cite(sources, phrase)}${trail}` : text
   })
   return { text: markdown, cited: [...cited.values()] }
 }

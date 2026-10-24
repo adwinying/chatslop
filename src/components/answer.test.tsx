@@ -138,3 +138,41 @@ test('swaps the link OpenAI writes for a citation number', () => {
     'Use the OTP.1 Done.',
   )
 })
+
+test('leaves cited Markdown it would break, and offsets that miss the link', () => {
+  const link = `([posb.com.sg](${posb.url}))`
+  const text = `😀${link} Done.`
+  render(
+    <Answer
+      parts={[
+        {
+          type: 'text',
+          text: '# Title\n',
+          citations: [{ source: posb }],
+        },
+        {
+          type: 'text',
+          text: '```js\nfoo()\n```',
+          citations: [{ source: posb }],
+        },
+        {
+          type: 'text',
+          text: `\n\n${text}`,
+          // Counted in code points, one short of UTF-16 after the emoji.
+          citations: [
+            { source: posb, startIndex: 3, endIndex: 3 + link.length },
+          ],
+        },
+      ]}
+    />,
+  )
+
+  expect(screen.getByRole('heading').textContent).toBe('Title')
+  expect(screen.getByRole('article').querySelector('code')?.textContent).toBe(
+    'foo()',
+  )
+  expect(screen.getByRole('article').textContent).toContain(
+    '😀(posb.com.sg) Done.',
+  )
+  expect(screen.queryByRole('link', { name: /^Source/ })).toBeNull()
+})
