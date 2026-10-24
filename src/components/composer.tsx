@@ -101,7 +101,8 @@ export function Composer({
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
         onPaste={intake?.paste}
-        className="w-full resize-none bg-transparent px-2 py-2 outline-none placeholder:text-muted-foreground"
+        // Grows with the text from 2 to 7 rows; py-2 adds 1rem.
+        className="field-sizing-content max-h-[calc(7lh+1rem)] min-h-[calc(2lh+1rem)] w-full resize-none bg-transparent px-2 py-2 outline-none placeholder:text-muted-foreground"
       />
       {reason && hasContent && !streaming && (
         <p className="px-2 pb-1 text-xs text-red-300">{reason}</p>
