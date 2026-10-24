@@ -5,7 +5,7 @@ import type {
   usageValidator,
 } from '@/convex/schema'
 import type { Infer } from 'convex/values'
-import type { ReactNode } from 'react'
+import type { ComponentProps, CSSProperties, ReactNode } from 'react'
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
 import { math } from '@streamdown/math'
@@ -17,11 +17,38 @@ import {
   SquareIcon,
   TriangleAlertIcon,
 } from 'lucide-react'
-import { useId, useState } from 'react'
-import { Streamdown } from 'streamdown'
+import { Children, isValidElement, useId, useState } from 'react'
+import { defaultComponents, Streamdown } from 'streamdown'
 import { cn } from '~/lib/utils'
 
 const plugins = { code, math, cjk }
+// Spreads each Live answer snapshot, saved about once a second, over the second.
+// A module constant, since Streamdown re-renders when `animated` changes identity.
+const animated = { maxBacklogMs: 1000 }
+const components = { inlineCode: InlineCode }
+
+/**
+ * Fades inline code in whole, timed by its first word, so its pill doesn't
+ * show empty while the words inside fade in. app.css stops those words.
+ */
+function InlineCode({
+  children,
+  ...props
+}: ComponentProps<typeof defaultComponents.code>) {
+  const first = Children.toArray(children).find(
+    isValidElement<{ 'data-sd-animate'?: boolean; style?: CSSProperties }>,
+  )
+  const fade = first?.props['data-sd-animate']
+  return (
+    <defaultComponents.code
+      {...props}
+      data-sd-animate={fade}
+      style={fade ? first?.props.style : undefined}
+    >
+      {children}
+    </defaultComponents.code>
+  )
+}
 
 /** What made a finished Answer. */
 type Made = {
@@ -55,6 +82,8 @@ export function Answer({
   const text = parts
     .flatMap((part) => (part.type === 'text' ? [part.text] : []))
     .join('\n\n')
+  // Text shown at mount, e.g. after a reload, would all fade in again.
+  const [fades] = useState(!text)
   // The Model can think again after some text, e.g. around a Web search.
   const thinking =
     streaming &&
@@ -82,6 +111,8 @@ export function Answer({
         <Streamdown
           plugins={plugins}
           isAnimating={streaming}
+          animated={fades ? animated : undefined}
+          components={components}
           className="font-serif text-[17px] leading-normal"
         >
           {text}

@@ -43,3 +43,25 @@ test('labels what made the Answer, with usage and timing on focus or tap', () =>
   fireEvent.click(label)
   expect(label).toHaveProperty('ariaExpanded', 'true')
 })
+
+test('fades in new text, but not text already there when it mounts', () => {
+  const parts = [
+    {
+      type: 'text' as const,
+      text: 'Hello there `code`',
+      state: 'streaming' as const,
+    },
+  ]
+  const fresh = render(<Answer streaming parts={[]} />)
+  fresh.rerender(<Answer streaming parts={parts} />)
+  expect(fresh.container.querySelector('[data-sd-animate]')).not.toBeNull()
+  expect(fresh.container.querySelector('code')).toHaveProperty(
+    'dataset.sdAnimate',
+    'true',
+  )
+  cleanup()
+
+  // Like a reload mid-Answer.
+  const reloaded = render(<Answer streaming parts={parts} />)
+  expect(reloaded.container.querySelector('[data-sd-animate]')).toBeNull()
+})

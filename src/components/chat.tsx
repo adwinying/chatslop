@@ -182,7 +182,7 @@ export function Chat({
               </div>
             </Fragment>
           ))}
-          {live && <Answer parts={live.parts} streaming />}
+          {live && <Answer key={live._id} parts={live.parts} streaming />}
         </div>
       </div>
       <div className="absolute inset-x-0 bottom-0 px-2 sm:px-4">
