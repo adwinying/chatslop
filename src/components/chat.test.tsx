@@ -100,8 +100,8 @@ test('jumps to a search hit older than the newest Messages, shown above them', (
 })
 
 /** A Thread of one Prompt and its Answer, with a Model to edit with. */
-function renderThread() {
-  queries.set('threads:messages', [prompt('p1'), answer('a1')])
+function renderThread(messages: object[] = [prompt('p1'), answer('a1')]) {
+  queries.set('threads:messages', messages)
   queries.set('models:options', {
     models: [
       { _id: 'm', name: 'Opus 5.5', attachmentTypes: [], reasoningLevels: [] },
@@ -210,4 +210,77 @@ test('a file dropped on the Prompt editor joins the edit, not the Draft', async 
   expect(
     chip.closest('form')?.contains(screen.getByLabelText('Edit Prompt')),
   ).toBe(true)
+})
+
+/** Selects from the start of `start` to the end of `end`, as the User would by dragging. */
+function selectText(start: Node, end = start) {
+  // jsdom lays nothing out.
+  Range.prototype.getBoundingClientRect = () => new DOMRect()
+  const range = document.createRange()
+  range.setStart(start, 0)
+  range.setEnd(end, end.childNodes.length)
+  document.getSelection()!.removeAllRanges()
+  document.getSelection()!.addRange(range)
+  fireEvent(document, new Event('selectionchange'))
+}
+
+test('quotes the selected Answer text after the Draft and focuses the composer', () => {
+  queries.set('users:me', { id: 'u4', name: 'Ada' })
+  renderThread()
+  fireEvent.change(screen.getByLabelText('Message'), {
+    target: { value: 'foo' },
+  })
+
+  selectText(screen.getByText('a1'))
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'Quote' }))
+
+  const message = screen.getByLabelText('Message')
+  expect(message).toHaveProperty('value', 'foo\n\n> a1\n\n')
+  expect(document.activeElement).toBe(message)
+  expect(screen.queryByRole('button', { name: 'Quote' })).toBeNull()
+})
+
+test('quotes every line of a Prompt selection into a blank Draft', () => {
+  queries.set('users:me', { id: 'u5', name: 'Ada' })
+  renderThread([
+    { ...prompt('p1'), parts: [{ type: 'text', text: 'one\n\ntwo\n' }] },
+  ])
+  fireEvent.change(screen.getByLabelText('Message'), {
+    target: { value: ' \n' },
+  })
+
+  selectText(screen.getByText(/one/))
+  fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
+
+  expect(screen.getByLabelText('Message')).toHaveProperty(
+    'value',
+    '> one\n>\n> two\n\n',
+  )
+})
+
+test('offers a Quote for a selection running past the text, short of the next Message', () => {
+  queries.set('users:me', { id: 'u6', name: 'Ada' })
+  renderThread()
+
+  // Like a triple-click, which ends the paragraph's selection in the next block.
+  selectText(
+    screen.getByText('a1'),
+    screen.getByText('a1').closest('article')!.parentElement!,
+  )
+
+  expect(screen.getByRole('button', { name: 'Quote' })).toBeTruthy()
+})
+
+test('offers no Quote for a selection across Messages, or once it collapses', () => {
+  queries.set('users:me', { id: 'u7', name: 'Ada' })
+  renderThread()
+
+  selectText(screen.getByText('p1'), screen.getByText('a1'))
+  expect(screen.queryByRole('button', { name: 'Quote' })).toBeNull()
+
+  selectText(screen.getByText('a1'))
+  expect(screen.getByRole('button', { name: 'Quote' })).toBeTruthy()
+  document.getSelection()!.collapseToEnd()
+  fireEvent(document, new Event('selectionchange'))
+  expect(screen.queryByRole('button', { name: 'Quote' })).toBeNull()
 })

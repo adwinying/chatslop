@@ -27,6 +27,7 @@ import {
   useState,
 } from 'react'
 import { defaultComponents, Streamdown } from 'streamdown'
+import { quotable } from '~/components/quote'
 import { cn } from '~/lib/utils'
 
 const plugins = { code, math, cjk }
@@ -244,16 +245,18 @@ export function Answer({
       {reasoning && <Reasoning text={reasoning} thinking={thinking} />}
       {text && (
         <CitedSources value={cited}>
-          <Streamdown
-            plugins={plugins}
-            isAnimating={streaming}
-            animated={fades ? animated : undefined}
-            components={components}
-            allowedTags={allowedTags}
-            className="font-serif text-[17px] leading-normal"
-          >
-            {text}
-          </Streamdown>
+          <div {...quotable}>
+            <Streamdown
+              plugins={plugins}
+              isAnimating={streaming}
+              animated={fades ? animated : undefined}
+              components={components}
+              allowedTags={allowedTags}
+              className="font-serif text-[17px] leading-normal"
+            >
+              {text}
+            </Streamdown>
+          </div>
         </CitedSources>
       )}
       {sources.length > 0 && (
@@ -292,7 +295,7 @@ export function Answer({
         </div>
       )}
       {(actions || made) && (
-        <div className="mt-2 flex items-center gap-1">
+        <div className="mt-2 flex items-center gap-1 select-none">
           {actions}
           {made && <Label {...made} />}
         </div>

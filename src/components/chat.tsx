@@ -27,6 +27,7 @@ import {
   PromptEditor,
 } from '~/components/message-actions'
 import { ModelPicker } from '~/components/model-picker'
+import { QuoteButton, quotable } from '~/components/quote'
 import {
   attempt,
   DeleteButton,
@@ -115,7 +116,8 @@ export function Chat({
       <ThreadHeader thread={thread} />
       {/* Reversed, so the view stays pinned to the newest text as it streams. */}
       <div className="flex flex-1 flex-col-reverse overflow-y-auto px-4 pb-40">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-8">
+        <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-6 pt-8">
+          <QuoteButton draftKey={draft} />
           {!threadId && me && (
             <Greeting name={me.name} draft={draftKey(me.id)} />
           )}
@@ -437,7 +439,10 @@ function Prompt({
         <>
           <PromptAttachments attachments={attachments} />
           {text && (
-            <div className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap">
+            <div
+              className="max-w-[85%] rounded-2xl bg-zinc-800 px-4 py-2.5 whitespace-pre-wrap"
+              {...quotable}
+            >
               {text}
             </div>
           )}

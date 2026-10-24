@@ -46,6 +46,10 @@ _Avoid_: Upload, file, document
 The unsent message in a Thread's composer, with its text and Attachments.
 _Avoid_: Unsent message, pending message
 
+**Quote**:
+Text the User selects in a Message and adds to the Draft as a Markdown quote.
+_Avoid_: Reply, citation (that's a Web search source)
+
 **Live answer**:
 An answer the model is still writing, which any of the User's open tabs can watch and resume after a reload.
 _Avoid_: Draft, stream, pending message
