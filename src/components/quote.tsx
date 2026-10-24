@@ -13,7 +13,7 @@ export const quotable = { 'data-quotable': '' }
 const withQuote = (draft: string, text: string) =>
   (draft.trim() ? `${draft.trimEnd()}\n\n` : '') +
   text
-    .replace(/^\n+|\n+$/g, '')
+    .trim()
     .split('\n')
     .map((line) => (line ? `> ${line}` : '>'))
     .join('\n') +
@@ -39,7 +39,8 @@ export function QuoteButton({ draftKey }: { draftKey: string | undefined }) {
   useEffect(() => {
     const onChange = () => {
       const selection = document.getSelection()
-      const range = selection?.rangeCount ? selection.getRangeAt(0) : null
+      // Firefox can hold several ranges, which could span Messages.
+      const range = selection?.rangeCount === 1 ? selection.getRangeAt(0) : null
       const message =
         range &&
         elementOf(range.startContainer)
@@ -60,11 +61,21 @@ export function QuoteButton({ draftKey }: { draftKey: string | undefined }) {
         setQuote(null)
         return
       }
-      const rect = range.getBoundingClientRect()
+      // Under the line where the selection ends, by the pointer, so it stays
+      // in view however far the selection runs.
+      const backward =
+        selection?.focusNode === range.startContainer &&
+        selection.focusOffset === range.startOffset
+      const rects = range.getClientRects()
+      const line =
+        (backward ? rects[0] : rects[rects.length - 1]) ??
+        range.getBoundingClientRect()
+      const x = backward ? line.left : line.right
       setQuote({
         text,
-        top: rect.bottom - at.top,
-        left: rect.left + rect.width / 2 - at.left,
+        top: line.bottom - at.top,
+        // Keeps the button within the column.
+        left: Math.min(Math.max(x - at.left, 48), at.width - 48),
       })
     }
     document.addEventListener('selectionchange', onChange)
@@ -89,6 +100,7 @@ export function QuoteButton({ draftKey }: { draftKey: string | undefined }) {
           // Adds on press, before a tap clears the selection (as iOS does)
           // and unmounts the button. Click serves assistive technology.
           onPointerDown={(event) => {
+            if (event.button !== 0) return
             event.preventDefault()
             add()
           }}

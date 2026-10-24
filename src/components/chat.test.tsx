@@ -216,6 +216,8 @@ test('a file dropped on the Prompt editor joins the edit, not the Draft', async 
 function selectText(start: Node, end = start) {
   // jsdom lays nothing out.
   Range.prototype.getBoundingClientRect = () => new DOMRect()
+  Range.prototype.getClientRects = () =>
+    document.createElement('div').getClientRects()
   const range = document.createRange()
   range.setStart(start, 0)
   range.setEnd(end, end.childNodes.length)
@@ -283,4 +285,16 @@ test('offers no Quote for a selection across Messages, or once it collapses', ()
   document.getSelection()!.collapseToEnd()
   fireEvent(document, new Event('selectionchange'))
   expect(screen.queryByRole('button', { name: 'Quote' })).toBeNull()
+})
+
+test('a right-click on Quote leaves the Draft alone', () => {
+  queries.set('users:me', { id: 'u8', name: 'Ada' })
+  renderThread()
+
+  selectText(screen.getByText('a1'))
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'Quote' }), {
+    button: 2,
+  })
+
+  expect(screen.getByLabelText('Message')).toHaveProperty('value', '')
 })
