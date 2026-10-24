@@ -4,6 +4,7 @@ import type {
   timingValidator,
   usageValidator,
 } from '@/convex/schema'
+import type { Citation } from 'ai'
 import type { Infer } from 'convex/values'
 import type { ComponentProps, CSSProperties, ReactNode } from 'react'
 import { cjk } from '@streamdown/cjk'
@@ -17,7 +18,14 @@ import {
   SquareIcon,
   TriangleAlertIcon,
 } from 'lucide-react'
-import { Children, isValidElement, useId, useState } from 'react'
+import {
+  Children,
+  createContext,
+  isValidElement,
+  use,
+  useId,
+  useState,
+} from 'react'
 import { defaultComponents, Streamdown } from 'streamdown'
 import { cn } from '~/lib/utils'
 
@@ -25,7 +33,9 @@ const plugins = { code, math, cjk }
 // Spreads each Live answer snapshot, saved about once a second, over the second.
 // A module constant, since Streamdown re-renders when `animated` changes identity.
 const animated = { maxBacklogMs: 1000 }
-const components = { inlineCode: InlineCode }
+const components = { inlineCode: InlineCode, cite: Cite }
+// Sanitization names attributes by their hast property.
+const allowedTags = { cite: ['dataSources'] }
 
 /**
  * Fades inline code in whole, timed by its first word, so its pill doesn't
@@ -47,6 +57,119 @@ function InlineCode({
     >
       {children}
     </defaultComponents.code>
+  )
+}
+
+type TextPart = Extract<Part, { type: 'text' }>
+type Source = { url: string; title?: string }
+
+/**
+ * A Message's text parts as Markdown. Anthropic starts a new part at each
+ * citation, so only parts split by others, like a Web search, are paragraphs.
+ */
+export const textOf = (
+  parts: Part[],
+  textFor = (part: TextPart) => part.text,
+) =>
+  parts
+    .map((part) => (part.type === 'text' ? textFor(part) : '\n\n'))
+    .join('')
+    .trim()
+
+const cite = (numbers: number[], phrase = '') =>
+  `<cite data-sources="${[...new Set(numbers)].join(' ')}">${phrase}</cite>`
+
+/**
+ * The Answer's Markdown with its citations as `<cite>` tags, and the cited
+ * Sources, numbered by first citation. Anthropic cites a whole text part;
+ * OpenAI cites a range, the `([host](url))` link it writes.
+ */
+function citedText(parts: Part[]) {
+  const cited = new Map<string, Source>()
+  const numbers = (citations: Citation[]) =>
+    citations.flatMap(({ source }) => {
+      if (source.sourceType !== 'url') return []
+      const { url, title } = source
+      if (!cited.has(url)) cited.set(url, { url, title })
+      return [[...cited.keys()].indexOf(url) + 1]
+    })
+
+  const markdown = textOf(parts, ({ text, citations = [] }) => {
+    // Stored parts came from the SDK; the validator only loosened their JSON.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+    const all = citations as Citation[]
+    // Offsets that miss the link, e.g. counted in code points, leave it as is.
+    const ranged = all
+      .filter(
+        ({ source, startIndex = 0, endIndex = 0 }) =>
+          source.sourceType === 'url' &&
+          text.slice(startIndex, endIndex).includes(source.url),
+      )
+      .toSorted((a, b) => (a.startIndex ?? 0) - (b.startIndex ?? 0))
+    if (ranged.length) {
+      let marked = ''
+      let at = 0
+      for (const citation of ranged) {
+        if ((citation.startIndex ?? 0) < at) continue
+        marked += text.slice(at, citation.startIndex).trimEnd()
+        marked += cite(numbers([citation]))
+        at = citation.endIndex ?? 0
+      }
+      return marked + text.slice(at)
+    }
+
+    const sources = numbers(all)
+    if (!sources.length) return text
+    const [, lead, phrase, trail] = /^(\s*)(.*?)(\s*)$/s.exec(text) ?? []
+    // Tags spanning lines would break the Markdown blocks inside.
+    return phrase?.includes('\n') || !phrase
+      ? text + cite(sources)
+      : `${lead}${cite(sources, phrase)}${trail}`
+  })
+  return { text: markdown, cited: [...cited.values()] }
+}
+
+/** The Answer's cited Sources, so `<cite>` can link its numbers. */
+const CitedSources = createContext<Source[]>([])
+
+const hostname = (url: string) =>
+  URL.canParse(url) ? new URL(url).hostname : url
+
+/** A cited phrase, underlined, then the numbers of its Sources. */
+function Cite({
+  children,
+  'data-sources': numbers = '',
+}: ComponentProps<'cite'> & { 'data-sources'?: string }) {
+  const sources = use(CitedSources)
+  const links = numbers
+    .split(' ')
+    .flatMap((n) => (sources[Number(n) - 1] ? [Number(n)] : []))
+  if (!links.length) return children
+  return (
+    <>
+      {children && (
+        <span className="underline decoration-zinc-600 decoration-dotted underline-offset-4">
+          {children}
+        </span>
+      )}
+      {links.map((n) => {
+        const { url, title } = sources[n - 1]!
+        return (
+          <sup key={n} className="ml-px font-sans text-[11px]">
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              title={title}
+              aria-label={`Source ${n}: ${title ?? hostname(url)}`}
+              className="rounded-sm bg-zinc-800 px-1 text-zinc-400 no-underline hover:text-zinc-100"
+            >
+              {n}
+            </a>
+          </sup>
+        )
+      })}
+    </>
   )
 }
 
@@ -79,9 +202,7 @@ export function Answer({
   const reasoning = parts
     .flatMap((part) => (part.type === 'reasoning' ? [part.text] : []))
     .join('\n\n')
-  const text = parts
-    .flatMap((part) => (part.type === 'text' ? [part.text] : []))
-    .join('\n\n')
+  const { text, cited } = citedText(parts)
   // Text shown at mount, e.g. after a reload, would all fade in again.
   const [fades] = useState(!text)
   // The Model can think again after some text, e.g. around a Web search.
@@ -91,9 +212,12 @@ export function Answer({
       (part) => part.type === 'reasoning' && part.state === 'streaming',
     )
   const sources = [
+    ...cited,
     ...new Map(
       parts.flatMap((part) =>
-        part.type === 'source-url' ? [[part.url, part] as const] : [],
+        part.type === 'source-url' && !cited.some(({ url }) => url === part.url)
+          ? [[part.url, part] as const]
+          : [],
       ),
     ).values(),
   ]
@@ -108,19 +232,22 @@ export function Answer({
       )}
       {reasoning && <Reasoning text={reasoning} thinking={thinking} />}
       {text && (
-        <Streamdown
-          plugins={plugins}
-          isAnimating={streaming}
-          animated={fades ? animated : undefined}
-          components={components}
-          className="font-serif text-[17px] leading-normal"
-        >
-          {text}
-        </Streamdown>
+        <CitedSources value={cited}>
+          <Streamdown
+            plugins={plugins}
+            isAnimating={streaming}
+            animated={fades ? animated : undefined}
+            components={components}
+            allowedTags={allowedTags}
+            className="font-serif text-[17px] leading-normal"
+          >
+            {text}
+          </Streamdown>
+        </CitedSources>
       )}
       {sources.length > 0 && (
         <ul aria-label="Sources" className="mt-3 flex flex-wrap gap-1.5">
-          {sources.map((source) => (
+          {sources.map((source, i) => (
             <li key={source.url}>
               <a
                 href={source.url}
@@ -129,9 +256,10 @@ export function Answer({
                 title={source.title}
                 className="flex items-center rounded-full border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-100"
               >
-                {URL.canParse(source.url)
-                  ? new URL(source.url).hostname
-                  : source.url}
+                {i < cited.length && (
+                  <span className="mr-1 text-zinc-500">{i + 1}</span>
+                )}
+                {hostname(source.url)}
               </a>
             </li>
           ))}

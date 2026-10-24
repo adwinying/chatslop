@@ -1,6 +1,5 @@
 import type { Id } from '@/convex/_generated/dataModel'
 import type { AttachmentKind } from '@/convex/intake'
-import type { Part } from '@/convex/parts'
 import type { FunctionReturnType } from 'convex/server'
 import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
@@ -8,7 +7,7 @@ import { Fragment, type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { reasoningLevelFor } from '@/convex/reasoning'
-import { Answer } from '~/components/answer'
+import { Answer, textOf } from '~/components/answer'
 import { jumpToMessage, SidebarButton } from '~/components/app-sidebar'
 import {
   hasFiles,
@@ -399,9 +398,6 @@ function Greeting({ name, draft }: { name: string; draft: string }) {
     </div>
   )
 }
-
-const textOf = (parts: Part[]) =>
-  parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('')
 
 /** A Prompt bubble under its Attachments, with Edit and Copy, which becomes an editor in place. */
 function Prompt({
