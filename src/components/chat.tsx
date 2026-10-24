@@ -367,10 +367,10 @@ function useChoices(
 }
 
 const SUGGESTIONS = [
-  'Explain Convex search indexes',
+  'How many Rs in strawberry?',
   '京都の紅葉、いつが見頃？',
-  'Write a Caddyfile for a WebSocket app',
-  'Compare TCP and QUIC in a table',
+  'What can I cook with eggs, rice, and spinach?',
+  'Help me write a birthday message for my mom',
 ]
 
 function Greeting({ name, draft }: { name: string; draft: string }) {
