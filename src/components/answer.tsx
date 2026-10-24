@@ -5,7 +5,7 @@ import type {
   usageValidator,
 } from '@/convex/schema'
 import type { Infer } from 'convex/values'
-import type { ReactNode } from 'react'
+import type { ComponentProps, CSSProperties, ReactNode } from 'react'
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
 import { math } from '@streamdown/math'
@@ -17,11 +17,37 @@ import {
   SquareIcon,
   TriangleAlertIcon,
 } from 'lucide-react'
-import { useId, useState } from 'react'
-import { Streamdown } from 'streamdown'
+import { Children, isValidElement, useId, useState } from 'react'
+import { defaultComponents, Streamdown } from 'streamdown'
 import { cn } from '~/lib/utils'
 
 const plugins = { code, math, cjk }
+// Spreads each Live answer snapshot, saved about once a second, over the second.
+// A module constant, since Streamdown re-renders when `animated` changes identity.
+const animated = { maxBacklogMs: 1000 }
+const components = { inlineCode: InlineCode }
+
+/**
+ * Fades inline code in whole, timed by its first word, so its pill doesn't
+ * show empty while the words inside fade in. app.css stops those words.
+ */
+function InlineCode({
+  children,
+  ...props
+}: ComponentProps<typeof defaultComponents.code>) {
+  const first = Children.toArray(children).find(
+    isValidElement<{ style?: CSSProperties }>,
+  )
+  return (
+    <defaultComponents.code
+      {...props}
+      data-sd-animate={first && true}
+      style={first?.props.style}
+    >
+      {children}
+    </defaultComponents.code>
+  )
+}
 
 /** What made a finished Answer. */
 type Made = {
@@ -82,6 +108,8 @@ export function Answer({
         <Streamdown
           plugins={plugins}
           isAnimating={streaming}
+          animated={animated}
+          components={components}
           className="font-serif text-[17px] leading-normal"
         >
           {text}

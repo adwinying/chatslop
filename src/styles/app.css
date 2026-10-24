@@ -10,6 +10,10 @@
 @import 'hack-font/build/web/hack.css';
 @import 'katex/dist/katex.min.css';
 @import 'streamdown/styles.css';
+/* Answer words fade in as they stream; tables and code appear whole. */
+:is(table, pre, code) [data-sd-animate] {
+  animation: none;
+}
 
 /* Streamdown and its plugins ship Tailwind classes. */
 @source '../../node_modules/streamdown/dist/*.js';
