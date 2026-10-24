@@ -14,7 +14,13 @@ export function useShortcut(
       !(event.metaKey || event.ctrlKey) ||
       event.altKey ||
       event.shiftKey !== shift ||
-      event.key.toLowerCase() !== key
+      letter(event) !== key ||
+      // keyCode 229: Safari's key after composition ends, as in the composer.
+      event.isComposing ||
+      event.keyCode === 229 ||
+      // Dialogs, modal or not, own their keys.
+      (event.target instanceof Element &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]'))
     )
       return
     event.preventDefault()
@@ -28,4 +34,11 @@ export function useShortcut(
 
   const keys = `${shift ? 'Shift+' : ''}${key.toUpperCase()}`
   return `Meta+${keys} Control+${keys}`
+}
+
+/** The Latin letter pressed, read from the key's position on non-Latin layouts. */
+function letter(event: KeyboardEvent) {
+  return /^[a-z]$/i.test(event.key)
+    ? event.key.toLowerCase()
+    : event.code.replace(/^Key/, '').toLowerCase()
 }

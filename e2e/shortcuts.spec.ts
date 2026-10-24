@@ -44,11 +44,18 @@ test('Mod+Shift+M opens the Model picker', async ({ page }) => {
 })
 
 test('Mod+Shift+E opens the Reasoning level', async ({ page }) => {
+  // The native picker is out of Playwright's reach, so record the call.
+  await page.evaluate(() => {
+    HTMLSelectElement.prototype.showPicker = function () {
+      this.dataset.picked = ''
+    }
+  })
   await page.getByLabel('Message').click()
   await page.keyboard.press('ControlOrMeta+Shift+E')
 
-  // The native picker itself is out of Playwright's reach.
-  await expect(page.getByLabel('Reasoning level')).toBeFocused()
+  const reasoning = page.getByLabel('Reasoning level')
+  await expect(reasoning).toBeFocused()
+  await expect(reasoning).toHaveAttribute('data-picked')
 })
 
 test('shortcut targets announce their keys', async ({ page }) => {
