@@ -124,7 +124,14 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       openSidebar(opener)
     }
   })
-  useShortcut('o', () => void navigate({ to: '/' }), { shift: true })
+  useShortcut(
+    'o',
+    () => {
+      onClose()
+      void navigate({ to: '/' })
+    },
+    { shift: true },
+  )
 
   return (
     <>

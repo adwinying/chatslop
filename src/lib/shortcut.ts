@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent } from 'react'
 
 /** Calls `run` when Mod (⌘ or Ctrl) plus `key` is pressed anywhere on the page. */
 export function useShortcut(
-  key: string,
+  key: Lowercase<string>,
   run: () => void,
   { shift = false } = {},
 ) {

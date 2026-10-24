@@ -28,10 +28,8 @@ test('Mod+K on a phone opens the sidebar to Thread search', async ({
 })
 
 test('Mod+Shift+O starts a new Thread', async ({ page }) => {
-  await page.getByLabel('Message').fill('Shortcut me')
-  await page.getByLabel('Message').press('Enter')
-  await expect(page).toHaveURL(/\/chat\/\w+$/)
-  await page.getByRole('button', { name: 'Stop' }).click()
+  await page.getByRole('link', { name: 'Admin' }).click()
+  await expect(page).toHaveURL('/admin')
 
   await page.keyboard.press('ControlOrMeta+Shift+O')
 
