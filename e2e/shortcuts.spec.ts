@@ -50,3 +50,14 @@ test('Mod+Shift+E opens the Reasoning level', async ({ page }) => {
   // The native picker itself is out of Playwright's reach.
   await expect(page.getByLabel('Reasoning level')).toBeFocused()
 })
+
+test('shortcut targets announce their keys', async ({ page }) => {
+  await expect(page.getByLabel('Search Threads')).toHaveAttribute(
+    'aria-keyshortcuts',
+    'Meta+K Control+K',
+  )
+  await expect(page.getByRole('link', { name: 'New Chat' })).toHaveAttribute(
+    'aria-keyshortcuts',
+    'Meta+Shift+O Control+Shift+O',
+  )
+})

@@ -152,7 +152,7 @@ export function ReasoningSelect({
   onChange: (level: string) => void
 }) {
   const select = useRef<HTMLSelectElement>(null)
-  useShortcut(
+  const shortcut = useShortcut(
     'e',
     () => {
       select.current?.focus()
@@ -170,6 +170,7 @@ export function ReasoningSelect({
       <BrainIcon className="size-3.5" />
       <select
         ref={select}
+        aria-keyshortcuts={shortcut}
         aria-label="Reasoning level"
         value={value}
         onChange={(event) => onChange(event.target.value)}

@@ -112,7 +112,7 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  useShortcut('k', () => {
+  const searchShortcut = useShortcut('k', () => {
     const opener = document.activeElement
     search.current?.focus()
     // Hidden on phones until the sidebar opens, so focus didn't take.
@@ -124,7 +124,7 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       openSidebar(opener)
     }
   })
-  useShortcut(
+  const newChatShortcut = useShortcut(
     'o',
     () => {
       onClose()
@@ -165,6 +165,7 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
         <div className="px-3">
           <Link
             to="/"
+            aria-keyshortcuts={newChatShortcut}
             className={cn(buttonVariants({ size: 'lg' }), 'w-full')}
             onClick={onClose}
           >
@@ -172,7 +173,12 @@ function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             New Chat
           </Link>
         </div>
-        <SearchBox ref={search} query={query} onChange={setQuery} />
+        <SearchBox
+          ref={search}
+          shortcut={searchShortcut}
+          query={query}
+          onChange={setQuery}
+        />
         {/* Hidden, not unmounted, while searching, so it keeps its loaded
             pages and live results instead of falling back to the preload. */}
         <ThreadList hidden={!!query.trim()} />
@@ -241,10 +247,12 @@ function ThreadList({ hidden }: { hidden: boolean }) {
 
 function SearchBox({
   ref,
+  shortcut,
   query,
   onChange,
 }: {
   ref: Ref<HTMLInputElement>
+  shortcut: string
   query: string
   onChange: (query: string) => void
 }) {
@@ -253,6 +261,7 @@ function SearchBox({
       <SearchIcon aria-hidden className="size-3.5 shrink-0" />
       <input
         ref={ref}
+        aria-keyshortcuts={shortcut}
         type="search"
         aria-label="Search Threads"
         placeholder="Search your Threads…"

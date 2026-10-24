@@ -1,6 +1,9 @@
 import { useEffect, useEffectEvent } from 'react'
 
-/** Calls `run` when Mod (⌘ or Ctrl) plus `key` is pressed anywhere on the page. */
+/**
+ * Calls `run` when Mod (⌘ or Ctrl) plus `key` is pressed anywhere on the
+ * page, and returns the combination for the target's `aria-keyshortcuts`.
+ */
 export function useShortcut(
   key: Lowercase<string>,
   run: () => void,
@@ -22,4 +25,7 @@ export function useShortcut(
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  const keys = `${shift ? 'Shift+' : ''}${key.toUpperCase()}`
+  return `Meta+${keys} Control+${keys}`
 }

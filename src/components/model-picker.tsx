@@ -23,7 +23,9 @@ export function ModelPicker({
   onPick: (modelId: Id<'models'>) => void
 }) {
   const button = useRef<HTMLButtonElement>(null)
-  useShortcut('m', () => button.current?.click(), { shift: true })
+  const shortcut = useShortcut('m', () => button.current?.click(), {
+    shift: true,
+  })
 
   return (
     <ModelMenu
@@ -33,6 +35,7 @@ export function ModelPicker({
       trigger={
         <button
           ref={button}
+          aria-keyshortcuts={shortcut}
           type="button"
           aria-label={`Model: ${model.name}`}
           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm outline-none hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-ring/30"
