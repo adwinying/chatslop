@@ -29,11 +29,14 @@ test('Mod+K on a phone opens the sidebar to Thread search', async ({
 
 test('Mod+Shift+O starts a new Thread', async ({ page }) => {
   await page.getByRole('link', { name: 'Admin' }).click()
-  await expect(page).toHaveURL('/admin')
+  await expect(
+    page.getByRole('heading', { name: 'Admin', exact: true }),
+  ).toBeVisible()
 
   await page.keyboard.press('ControlOrMeta+Shift+O')
 
   await expect(page).toHaveURL('/')
+  await expect(page.getByLabel('Message')).toBeFocused()
 })
 
 test('Mod+Shift+M opens the Model picker', async ({ page }) => {

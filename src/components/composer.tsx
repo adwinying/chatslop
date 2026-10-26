@@ -31,6 +31,7 @@ const pill =
  */
 export function Composer({
   draftKey,
+  focusOnMount,
   streaming,
   blockReason,
   controls,
@@ -40,6 +41,8 @@ export function Composer({
 }: {
   /** From `draftKey()`; the text area waits for it. */
   draftKey: string | undefined
+  /** Focuses the text area on mount, as in a new Thread. */
+  focusOnMount?: boolean
   streaming: boolean
   /** Why Send is blocked, e.g. no Model to send with. Shown once there's text or a file. */
   blockReason?: string
@@ -95,6 +98,8 @@ export function Composer({
       <textarea
         id={MESSAGE_ID}
         aria-label="Message"
+        // oxlint-disable-next-line jsx-a11y/no-autofocus -- a new Thread starts with typing.
+        autoFocus={focusOnMount}
         disabled={!draftKey}
         placeholder="Type your message here…"
         rows={2}

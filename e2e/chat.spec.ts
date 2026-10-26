@@ -48,6 +48,18 @@ test('an Answer streams, resumes after a reload, and stops', async ({
   expect(await lastWord(page)).toBeLessThan(200)
 })
 
+test('New Chat focuses the composer', async ({ page }) => {
+  await page.getByRole('link', { name: 'Admin' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Admin', exact: true }),
+  ).toBeVisible()
+
+  await page.getByRole('link', { name: 'New Chat' }).click()
+
+  await expect(page).toHaveURL('/')
+  await expect(page.getByLabel('Message')).toBeFocused()
+})
+
 test('a Model picked by keyboard persists after sending and reloading', async ({
   page,
 }) => {

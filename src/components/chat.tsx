@@ -189,6 +189,7 @@ export function Chat({
       <div className="absolute inset-x-0 bottom-0 px-2 sm:px-4">
         <Composer
           draftKey={draft}
+          focusOnMount={!threadId}
           streaming={!!live}
           blockReason={
             options === undefined
